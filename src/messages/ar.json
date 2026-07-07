@@ -1,0 +1,127 @@
+{
+  "brand": {
+    "name": "النقل الذكي"
+  },
+  "nav": {
+    "home": "الرئيسية",
+    "myTrips": "رحلاتي",
+    "forCompanies": "للشركات",
+    "login": "تسجيل الدخول",
+    "openMenu": "فتح القائمة",
+    "menu": "القائمة"
+  },
+  "home": {
+    "hero": {
+      "title": "احجز رحلتك بين المدن بضغطة واحدة",
+      "subtitle": "قارن الرحلات والأسعار بين شركات النقل، اختر مقعدك، واستلم تذكرتك الإلكترونية في دقائق."
+    }
+  },
+  "searchForm": {
+    "from": "من",
+    "fromPlaceholder": "مدينة الانطلاق",
+    "to": "إلى",
+    "toPlaceholder": "مدينة الوصول",
+    "date": "تاريخ السفر",
+    "datePlaceholder": "اختر التاريخ",
+    "passengers": "عدد الركاب",
+    "passengersCount": "{count, plural, one {راكب واحد} two {راكبان} few {# ركاب} other {# راكب}}",
+    "swap": "تبديل المدن",
+    "submit": "ابحث عن رحلة",
+    "errors": {
+      "fromRequired": "اختر مدينة الانطلاق",
+      "toRequired": "اختر مدينة الوصول",
+      "dateRequired": "اختر تاريخ السفر",
+      "sameCity": "يجب أن تختلف مدينة الوصول عن مدينة الانطلاق"
+    }
+  },
+  "popularRoutes": {
+    "title": "الوجهات الأكثر طلباً",
+    "fromPrice": "ابتداءً من {price, number} ل.س",
+    "tripsPerDay": "{count, plural, one {رحلة واحدة يومياً} two {رحلتان يومياً} few {# رحلات يومياً} other {# رحلة يومياً}}"
+  },
+  "howItWorks": {
+    "title": "كيف تحجز رحلتك؟",
+    "steps": {
+      "search": {
+        "title": "ابحث عن رحلتك",
+        "description": "حدد مدينتي الانطلاق والوصول وتاريخ السفر، وقارن بين الرحلات والأسعار المتاحة."
+      },
+      "seat": {
+        "title": "اختر مقعدك",
+        "description": "اطّلع على مخطط الباص واختر المقعد الذي يناسبك بكل سهولة."
+      },
+      "ticket": {
+        "title": "استلم تذكرتك الإلكترونية",
+        "description": "ادفع نقداً عند الصعود واحصل على تذكرة برمز QR على هاتفك مباشرة."
+      }
+    }
+  },
+  "stats": {
+    "companies": { "value": "+10", "label": "شركة نقل" },
+    "dailyTrips": { "value": "+150", "label": "رحلة يومياً" },
+    "cities": { "value": "6", "label": "مدينة" },
+    "bookedSeats": { "value": "+25,000", "label": "مقعد محجوز" }
+  },
+  "partners": {
+    "title": "شركاؤنا",
+    "tripsCount": "{count, plural, few {# رحلات} many {# رحلة} other {# رحلة}}"
+  },
+  "operatorCta": {
+    "title": "هل تملك شركة نقل؟ انضم إلى المنصة",
+    "subtitle": "وسّع وصولك إلى آلاف المسافرين، وأدر رحلاتك وحجوزاتك من مكان واحد.",
+    "button": "انضم إلى المنصة"
+  },
+  "companyPage": {
+    "title": "صفحة الشركة",
+    "underConstruction": "هذه الصفحة قيد التطوير — عد إلينا قريباً."
+  },
+  "operatorPage": {
+    "title": "بوابة شركات النقل",
+    "underConstruction": "هذه الصفحة قيد التطوير — عد إلينا قريباً."
+  },
+  "searchPage": {
+    "title": "نتائج البحث",
+    "edit": "تعديل",
+    "startSearch": "حدد وجهتك وتاريخ سفرك لعرض الرحلات المتاحة.",
+    "error": "حدث خطأ أثناء تحميل الرحلات، حاول مجدداً.",
+    "empty": {
+      "title": "لا توجد رحلات في هذا التاريخ",
+      "description": "جرّب تاريخاً آخر — قد تتوفر رحلات في اليوم التالي.",
+      "nextDay": "عرض رحلات اليوم التالي"
+    },
+    "durationHours": "{hours} س",
+    "durationMinutes": "{minutes} د",
+    "price": "{price, number} ل.س",
+    "seatsAvailable": "{count, plural, one {مقعد واحد متاح} two {مقعدان متاحان} few {# مقاعد متاحة} many {# مقعداً متاحاً} other {# مقعد متاح}}",
+    "selectSeats": "اختر المقاعد"
+  },
+  "filters": {
+    "trigger": "تصفية",
+    "title": "تصفية النتائج",
+    "count": "{count, plural, =0 {لا توجد رحلات متاحة} one {رحلة واحدة متاحة} two {رحلتان متاحتان} few {# رحلات متاحة} many {# رحلة متاحة} other {# رحلة متاحة}}",
+    "departureWindow": "وقت الانطلاق",
+    "windows": {
+      "morning": "صباح (05–12)",
+      "noon": "ظهر (12–17)",
+      "evening": "مساء (17–24)"
+    },
+    "company": "الشركة",
+    "busType": "نوع الباص",
+    "standard": "عادي",
+    "vip": "VIP",
+    "sort": "الترتيب",
+    "sortDeparture": "الأبكر مغادرةً",
+    "sortPrice": "الأقل سعراً",
+    "clear": "مسح الفلاتر",
+    "noMatches": "لا توجد رحلات مطابقة للتصفية الحالية."
+  },
+  "footer": {
+    "about": "منصة إلكترونية لحجز رحلات النقل بين المدن السورية — قارن الأسعار، اختر مقعدك، واستلم تذكرتك الإلكترونية في دقائق.",
+    "quickLinks": "روابط سريعة",
+    "contact": "تواصل معنا",
+    "phone": "+963 11 000 0000",
+    "email": "info@naql.sy",
+    "address": "دمشق، سوريا",
+    "copyright": "© {year} النقل الذكي — جميع الحقوق محفوظة"
+  }
+}
