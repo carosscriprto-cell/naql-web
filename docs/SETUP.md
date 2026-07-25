@@ -1,6 +1,8 @@
 # Project Setup — Frontend v1
 
-Stack: Next.js (App Router) · TypeScript · Tailwind · TanStack Query · shadcn/ui · next-intl (ar/RTL)
+Stack: Next.js (App Router) · TypeScript · Tailwind · TanStack Query · shadcn/ui · next-intl (ar/RTL) · **Supabase (Phase E backend)**
+
+> Sections 1–7 already executed (Tasks 1–9 done). Section 5 and 10 updated for Supabase — apply the deltas when starting Phase E.
 
 ## 1. Create project
 
@@ -12,159 +14,153 @@ cd naql-web
 ## 2. Install dependencies
 
 ```bash
-# Data / server state --done
+# Data / server state
 npm i @tanstack/react-query @tanstack/react-query-devtools axios
 
-# Forms + validation --done
+# Forms + validation
 npm i react-hook-form zod @hookform/resolvers
 
-# Client state (booking flow only) --done
+# Client state (booking flow only)
 npm i zustand
 
-# i18n / RTL --done
+# i18n / RTL
 npm i next-intl
 
-# Utilities --done
+# Utilities
 npm i date-fns clsx tailwind-merge lucide-react sonner qrcode.react
 
-# Tables (operator/admin — installed now, used in Phase D) --done
+# Tables (operator/admin — installed now, used in Phase D)
 npm i @tanstack/react-table
 
-# Dev --done
+# Backend client (Phase E — install when starting Task E1)
+npm i @supabase/supabase-js
+
+# Dev
 npm i -D msw prettier prettier-plugin-tailwindcss
 ```
 
 ## 3. shadcn/ui
 
-```bash --done
+```bash
 npx shadcn@latest init
-# style: default · base color: neutral · css vars: yes --done
+# style: default · base color: neutral · css vars: yes
 
-npx shadcn@latest add button input select calendar popover dialog card badge skeleton separator sheet
+npx shadcn@latest add button input select calendar popover dialog card badge skeleton separator sheet radio-group
 ```
 
-## 4. Prettier --done
+## 4. Prettier
 
 `.prettierrc`:
-
 ```json
-{
-  "semi": true,
-  "singleQuote": false,
-  "plugins": ["prettier-plugin-tailwindcss"]
-}
+{ "semi": true, "singleQuote": false, "plugins": ["prettier-plugin-tailwindcss"] }
 ```
 
-## 5. Env validation --done
+## 5. Env validation (Supabase-aware)
 
 `src/config/env.ts`:
-
 ```ts
 import { z } from "zod";
 
 const schema = z.object({
-  NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:3000/api/v1"),
   NEXT_PUBLIC_USE_MOCKS: z.enum(["true", "false"]).default("true"),
+  // Phase E:
+  NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
 });
 
 export const env = schema.parse({
-  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_USE_MOCKS: process.env.NEXT_PUBLIC_USE_MOCKS,
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 });
 ```
 
-`.env.local`: ---done
-
+`.env.local`:
 ```
-NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
 NEXT_PUBLIC_USE_MOCKS=true
+# Phase E:
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
-## 6. Folder structure (create empty dirs now)
+Note: `NEXT_PUBLIC_API_URL`/axios remain only while MSW is active (MSW intercepts HTTP). They are removed feature-by-feature during Phase E as `api.ts` internals switch to supabase-js.
 
-```bash
-mkdir -p src/{features,components/shared,lib,providers,config,types,mocks}
-mkdir -p src/features/{search,booking,tickets,auth}/{components,hooks}
-```
-
-Target layout:
+## 6. Folder structure
 
 ```
 src/
 ├── app/
 │   ├── (public)/            # home, search, trips
-│   ├── (passenger)/         # tickets, profile   (Phase C)
+│   ├── (passenger)/         # tickets, tickets/lookup   (Task E4 — no auth)
 │   ├── operator/            # (Phase D)
 │   └── admin/               # (Phase D)
 ├── features/<name>/{components,hooks,api.ts,types.ts,schemas.ts}
 ├── components/{ui,shared}
-├── lib/{api-client.ts, query-client.ts, query-keys.ts, utils.ts}
+├── lib/{api-client.ts, supabase.ts, rpc.ts, query-client.ts, query-keys.ts, utils.ts}
 ├── providers/
 ├── config/
-├── types/
+├── types/                   # domain.ts + database.ts (supabase gen types, synced from backend repo)
 └── mocks/{data.ts, handlers.ts}
 ```
 
-## 7. Core lib files --done
+## 7. Core lib files
 
-`src/lib/query-client.ts`:
+(unchanged: `query-client.ts`, `api-client.ts`, `query-keys.ts`, `query-provider.tsx` — see repo)
 
+Phase E additions:
+
+`src/lib/supabase.ts`:
 ```ts
-import { QueryClient } from "@tanstack/react-query";
-
-export function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
-    },
-  });
-}
-```
-
-`src/lib/api-client.ts`:
-
-```ts
-import axios from "axios";
+import { createClient } from "@supabase/supabase-js";
 import { env } from "@/config/env";
+import type { Database } from "@/types/database";
 
-export const api = axios.create({ baseURL: env.NEXT_PUBLIC_API_URL });
-// Auth interceptors added in Phase C.
+export const supabase = createClient<Database>(
+  env.NEXT_PUBLIC_SUPABASE_URL!,
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
 ```
 
-`src/lib/query-keys.ts`:
-
+`src/lib/rpc.ts`:
 ```ts
-export const queryKeys = {
-  cities: { all: ["cities"] as const },
-  trips: {
-    search: (p: Record<string, string>) => ["trips", "search", p] as const,
-    detail: (id: string) => ["trips", id] as const,
-    seats: (id: string) => ["trips", id, "seats"] as const,
-  },
-  bookings: {
-    mine: () => ["bookings", "mine"] as const,
-    detail: (id: string) => ["bookings", id] as const,
-  },
-} as const;
-```
+import { z } from "zod";
+import { supabase } from "./supabase";
 
-`src/providers/query-provider.tsx`: --done
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 
-```tsx
-"use client";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useState } from "react";
-import { makeQueryClient } from "@/lib/query-client";
+const envelope = z.union([
+  z.object({ ok: z.literal(true), data: z.unknown() }),
+  z.object({
+    ok: z.literal(false),
+    error: z.object({
+      code: z.string(),
+      message: z.string(),
+      details: z.record(z.unknown()).optional(),
+    }),
+  }),
+]);
 
-export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const [client] = useState(makeQueryClient);
-  return (
-    <QueryClientProvider client={client}>
-      {children}
-      <ReactQueryDevtools initialIsOpen={false} />
-    </QueryClientProvider>
-  );
+export async function callRpc<T>(
+  name: string,
+  args: Record<string, unknown>,
+  schema: z.ZodType<T>,
+): Promise<T> {
+  const { data, error } = await supabase.rpc(name, args);
+  if (error) throw new ApiError("NETWORK_ERROR", error.message);
+  const parsed = envelope.parse(data);
+  if (!parsed.ok) {
+    const e = parsed.error;
+    throw new ApiError(e.code, e.message, e.details);
+  }
+  return schema.parse(parsed.data);
 }
 ```
 
@@ -172,13 +168,21 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
 - `next-intl` with `ar` as default locale, messages in `src/messages/ar.json`.
 - Root layout: `<html lang="ar" dir="rtl">`.
-- Font: `next/font` with an Arabic-friendly font (e.g. IBM Plex Sans Arabic or Cairo).
+- Font: `next/font` with an Arabic-friendly font (IBM Plex Sans Arabic).
 - Use logical Tailwind utilities (`ps-*`, `pe-*`, `start-*`, `end-*`) — never `pl-*`/`pr-*`.
 
 ## 9. Rules (enforced in review)
 
-1. Components never call axios — data flows only through feature hooks.
-2. Every API response parsed with zod in `features/*/api.ts`.
+1. Components never call axios **or supabase** — data flows only through feature hooks → `features/*/api.ts`.
+2. Every API/RPC response parsed with zod in `features/*/api.ts` (RPCs via `callRpc`).
 3. Query keys only from `lib/query-keys.ts`.
 4. Server Components by default; `"use client"` only where interaction exists.
 5. Mock data lives in `src/mocks/` only — never inline in components.
+6. Supabase types (`types/database.ts`) never leak into components — domain types come from `features/*/schemas.ts`.
+7. Error handling keyed on `ApiError.code` only, never message text.
+
+## 10. Domain enums
+
+```ts
+export type Gender = "male" | "female"; // on passengers + locked/booked seats
+```
