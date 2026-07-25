@@ -29,9 +29,10 @@ export const tripSearchItemSchema = z.object({
   busType: z.enum(["عادي", "VIP"]),
 }) satisfies z.ZodType<DomainTripSearchItem>;
 
-// Pagination envelope for list endpoints (docs/BACKEND_V1.md §0).
+// Inner data payload of the GET /trips/search envelope (docs/BACKEND_V1.md
+// §0). The { ok, data } envelope itself is peeled off by unwrap().
 export const tripSearchResponseSchema = z.object({
-  data: z.array(tripSearchItemSchema),
+  items: z.array(tripSearchItemSchema),
   meta: z.object({
     page: z.number().int(),
     perPage: z.number().int(),
@@ -39,5 +40,12 @@ export const tripSearchResponseSchema = z.object({
   }),
 });
 
+// Trip details = the search item shape plus the cancellation policy text
+// (docs/BACKEND_V1.md §2, GET /trips/:id). Reuses the sub-schemas above.
+export const tripDetailSchema = tripSearchItemSchema.extend({
+  cancellationPolicy: z.string(),
+});
+
 export type City = z.infer<typeof citySchema>;
 export type TripSearchItem = z.infer<typeof tripSearchItemSchema>;
+export type TripDetail = z.infer<typeof tripDetailSchema>;

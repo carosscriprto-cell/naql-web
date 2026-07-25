@@ -1,11 +1,14 @@
 import { z } from "zod";
 
 import { api } from "@/lib/api-client";
+import { unwrap } from "@/lib/envelope";
 import { mocksReady } from "@/mocks/init";
 import {
   citySchema,
+  tripDetailSchema,
   tripSearchResponseSchema,
   type City,
+  type TripDetail,
   type TripSearchItem,
 } from "./schemas";
 
@@ -14,7 +17,7 @@ import {
 export async function fetchCities(): Promise<City[]> {
   await mocksReady();
   const response = await api.get("/cities");
-  return z.array(citySchema).parse(response.data);
+  return unwrap(response.data, z.array(citySchema));
 }
 
 export type TripSearchParams = {
@@ -28,5 +31,11 @@ export async function fetchTrips(
 ): Promise<TripSearchItem[]> {
   await mocksReady();
   const response = await api.get("/trips/search", { params });
-  return tripSearchResponseSchema.parse(response.data).data;
+  return unwrap(response.data, tripSearchResponseSchema).items;
+}
+
+export async function getTrip(id: string): Promise<TripDetail> {
+  await mocksReady();
+  const response = await api.get(`/trips/${id}`);
+  return unwrap(response.data, tripDetailSchema);
 }

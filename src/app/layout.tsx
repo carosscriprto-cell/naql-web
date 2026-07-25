@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { MockProvider } from "@/providers/mock-provider";
@@ -33,6 +34,7 @@ export default function RootLayout({
           <MockProvider>
             <QueryProvider>{children}</QueryProvider>
           </MockProvider>
+          <Toaster position="top-center" dir="rtl" />
         </NextIntlClientProvider>
       </body>
     </html>

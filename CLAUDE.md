@@ -22,3 +22,7 @@ Rules:
 - MSW handlers must simulate failure paths (409 lock conflict, 410 LOCK_EXPIRED) behind
   deterministic triggers so they're demoable (e.g. seat "13" always conflicts).
 - Countdown derives from lockExpiresAt (server time), never from a local setTimeout duration.
+
+- Gender: enum "male" | "female" on every passenger; rendered on locked/booked seats.
+- MSW handlers return the BACKEND_V1 §0 envelope: { ok:true, data } | { ok:false, error:{ code, message, details? } }.
+- All features/*/api.ts unwrap via lib/envelope.ts and throw ApiError. Error UX keys on ApiError.code only, never message text.

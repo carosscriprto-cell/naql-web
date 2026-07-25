@@ -115,6 +115,105 @@
     "clear": "مسح الفلاتر",
     "noMatches": "لا توجد رحلات مطابقة للتصفية الحالية."
   },
+  "tripDetail": {
+    "company": "شركة النقل",
+    "pricePerSeat": "السعر لكل مقعد",
+    "cancellationTitle": "سياسة الإلغاء",
+    "seatSelection": "اختيار المقاعد",
+    "seatSelectionPlaceholder": "سيظهر مخطط الباص هنا لاختيار مقاعدك.",
+    "cta": "اختيار المقاعد",
+    "ctaDeparted": "انطلقت الرحلة",
+    "ctaFull": "اكتملت المقاعد",
+    "error": "حدث خطأ أثناء تحميل تفاصيل الرحلة، حاول مجدداً.",
+    "notFound": {
+      "title": "الرحلة غير موجودة",
+      "description": "قد تكون الرحلة قد حُذفت أو لم تعد متاحة. عد إلى البحث للعثور على رحلات أخرى.",
+      "back": "العودة إلى الرئيسية"
+    }
+  },
+  "seatMap": {
+    "driver": "السائق",
+    "seat": "مقعد {number}",
+    "male": "ذكر",
+    "female": "أنثى",
+    "legend": {
+      "available": "متاح",
+      "selected": "مختار",
+      "male": "ذكر",
+      "female": "أنثى"
+    },
+    "selectHint": "اختر {count, plural, one {مقعداً واحداً} two {مقعدين} few {# مقاعد} other {# مقعداً}}",
+    "total": "الإجمالي",
+    "totalPrice": "{price, number} ل.س",
+    "continue": "متابعة",
+    "remove": "إزالة المقعد",
+    "seatTaken": "تم حجز المقعد {seats}، وأُلغي اختياره.",
+    "conflict": "تم حجز بعض المقاعد للتو، اختر مقاعد أخرى",
+    "genericError": "حدث خطأ، حاول مجدداً",
+    "loadError": "تعذّر تحميل مخطط المقاعد، حاول مجدداً."
+  },
+  "checkout": {
+    "title": "إتمام الحجز",
+    "timeLeft": "الوقت المتبقي لإتمام الحجز",
+    "expired": {
+      "title": "انتهت مهلة الحجز",
+      "description": "انقضت مدة حجز المقاعد. عد لاختيار مقاعدك من جديد.",
+      "action": "العودة لاختيار المقاعد"
+    },
+    "passengersTitle": "بيانات الركاب",
+    "seat": "المقعد {number}",
+    "fullName": "الاسم الكامل",
+    "fullNamePlaceholder": "الاسم الثلاثي",
+    "phone": "رقم الهاتف",
+    "phonePlaceholder": "+9639XXXXXXXX",
+    "gender": "الجنس",
+    "genderHint": "لتغيير الجنس عد لاختيار المقاعد",
+    "male": "ذكر",
+    "female": "أنثى",
+    "samePhone": "نفس الرقم لجميع الركاب",
+    "errors": {
+      "nameRequired": "الاسم مطلوب (3 أحرف على الأقل)",
+      "phoneInvalid": "أدخل رقماً سورياً صحيحاً يبدأ بـ +9639"
+    },
+    "payment": {
+      "title": "طريقة الدفع",
+      "office": "الدفع في المكتب",
+      "explainer": "تدفع قيمة التذكرة نقداً في مكتب الشركة قبل موعد الانطلاق."
+    },
+    "summary": {
+      "title": "ملخص الطلب",
+      "route": "{from} ← {to}",
+      "pricePerSeat": "سعر المقعد",
+      "seatsCount": "{count, plural, one {مقعد واحد} two {مقعدان} few {# مقاعد} other {# مقعداً}}",
+      "total": "الإجمالي",
+      "confirm": "تأكيد الحجز"
+    },
+    "price": "{price, number} ل.س",
+    "genericError": "حدث خطأ، حاول مجدداً"
+  },
+  "confirmation": {
+    "title": "تم تأكيد حجزك",
+    "subtitle": "احتفظ برمز الحجز أو رمز QR لعرضه عند الصعود.",
+    "pnrLabel": "رمز الحجز",
+    "copy": "نسخ",
+    "copied": "تم نسخ رمز الحجز",
+    "qrAlt": "رمز QR للتذكرة",
+    "route": "{from} ← {to}",
+    "passengersTitle": "الركاب",
+    "table": {
+      "seat": "المقعد",
+      "name": "الاسم",
+      "gender": "الجنس",
+      "phone": "الهاتف"
+    },
+    "male": "ذكر",
+    "female": "أنثى",
+    "seat": "المقعد {number}",
+    "total": "الإجمالي",
+    "notice": "ادفع في المكتب قبل الانطلاق بـ 30 دقيقة",
+    "home": "العودة للرئيسية",
+    "price": "{price, number} ل.س"
+  },
   "footer": {
     "about": "منصة إلكترونية لحجز رحلات النقل بين المدن السورية — قارن الأسعار، اختر مقعدك، واستلم تذكرتك الإلكترونية في دقائق.",
     "quickLinks": "روابط سريعة",

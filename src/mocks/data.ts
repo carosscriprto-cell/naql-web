@@ -77,10 +77,12 @@ type TripSeed = {
   price: number;
   busType: BusType;
   availableSeats: number;
+  /** Days from today the trip departs. Defaults to tomorrow. */
+  dayOffset?: number;
 };
 
 function makeTrip(seed: TripSeed): TripSearchItem {
-  const departure = syriaLocal(1, seed.hour, seed.minute);
+  const departure = syriaLocal(seed.dayOffset ?? 1, seed.hour, seed.minute);
   const arrival = new Date(departure.getTime() + seed.durationMin * 60_000);
   return {
     id: uuid("e1", seed.n),
@@ -253,6 +255,113 @@ const tripSeeds: TripSeed[] = [
 ];
 
 export const trips: TripSearchItem[] = tripSeeds.map(makeTrip);
+
+const CANCELLATION_POLICY =
+  "الإلغاء مجاني حتى ساعتين قبل موعد الانطلاق. بعد ذلك لا يمكن استرداد قيمة التذكرة.";
+
+// Detail-only fixtures with stable ids, not surfaced in search, for the
+// Task 10 AC-2 CTA states: a departed trip and a fully-booked one.
+//   departed → 000000e1-0000-4000-8000-000000000013
+//   full     → 000000e1-0000-4000-8000-000000000014
+const detailFixtures: TripSearchItem[] = [
+  makeTrip({
+    n: 13,
+    company: alAmana,
+    from: damascus,
+    to: aleppo,
+    hour: 8,
+    minute: 0,
+    durationMin: 300,
+    price: 110000,
+    busType: "VIP",
+    availableSeats: 24,
+    dayOffset: -1,
+  }),
+  makeTrip({
+    n: 14,
+    company: alKadmous,
+    from: damascus,
+    to: latakia,
+    hour: 12,
+    minute: 0,
+    durationMin: 240,
+    price: 100000,
+    busType: "VIP",
+    availableSeats: 0,
+  }),
+];
+
+export type TripDetail = TripSearchItem & { cancellationPolicy: string };
+
+/** Trip by id — searchable trips plus the detail-only fixtures. */
+export function getTrip(id: string): TripDetail | undefined {
+  const trip = [...trips, ...detailFixtures].find((t) => t.id === id);
+  return trip ? { ...trip, cancellationPolicy: CANCELLATION_POLICY } : undefined;
+}
+
+type SeatGender = "male" | "female";
+type SeatFixture = {
+  number: string;
+  row: number;
+  col: number;
+  status: "available" | "locked" | "booked";
+  gender?: SeatGender;
+};
+type SeatMapFixture = {
+  layout: { rows: number; cols: number; aisleAfterCol: number };
+  seats: SeatFixture[];
+};
+
+const SEAT_ROWS = 12;
+const SEAT_COLS = 4;
+const AISLE_AFTER_COL = 2;
+
+// Deterministic occupancy so a selection survives the 15s refetch (PAS-4 AC-5),
+// with a gender mix on every occupied seat. Seat "13" stays available — it is
+// the Task 12 lock-conflict trigger. Everything unlisted is available.
+const bookedSeats: Record<string, SeatGender> = {
+  "3": "male",
+  "4": "female",
+  "15": "female",
+  "22": "male",
+  "30": "male",
+  "31": "female",
+  "45": "female",
+};
+const lockedSeats: Record<string, SeatGender> = {
+  "2": "female",
+  "9": "male",
+  "18": "female",
+  "27": "male",
+  "36": "female",
+};
+
+function buildSeatMap(): SeatMapFixture {
+  const seats: SeatFixture[] = [];
+  let n = 1;
+  for (let row = 0; row < SEAT_ROWS; row++) {
+    for (let col = 0; col < SEAT_COLS; col++) {
+      const number = String(n++);
+      if (bookedSeats[number]) {
+        seats.push({ number, row, col, status: "booked", gender: bookedSeats[number] });
+      } else if (lockedSeats[number]) {
+        seats.push({ number, row, col, status: "locked", gender: lockedSeats[number] });
+      } else {
+        seats.push({ number, row, col, status: "available" });
+      }
+    }
+  }
+  return {
+    layout: { rows: SEAT_ROWS, cols: SEAT_COLS, aisleAfterCol: AISLE_AFTER_COL },
+    seats,
+  };
+}
+
+const seatMap = buildSeatMap();
+
+export function getSeatMap(): SeatMapFixture {
+  return seatMap;
+}
 
 export function getCities(): City[] {
   return cities;
