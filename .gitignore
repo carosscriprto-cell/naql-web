@@ -31,7 +31,14 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
+# .env* covers .env.local and .env.test (DB test creds) — both stay untracked.
 .env*
+!.env.example
+
+# supabase local stack (backend lives in supabase/)
+supabase/.branches/
+supabase/.temp/
+supabase/signing_keys.json
 
 # vercel
 .vercel

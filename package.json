@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:whoami": "supabase projects list && node -e \"console.log('LINKED=' + require('fs').readFileSync('supabase/.temp/project-ref','utf8').trim())\"",
+    "db:reset": "supabase db reset --linked",
+    "db:test": "vitest run -c vitest.db.config.ts",
+    "db:types": "supabase gen types typescript --linked > src/types/database.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -45,12 +49,15 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "msw": "^2.14.6",
     "prettier": "^3.9.4",
     "prettier-plugin-tailwindcss": "^0.8.0",
+    "supabase": "^2.109.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.0"
   }
 }

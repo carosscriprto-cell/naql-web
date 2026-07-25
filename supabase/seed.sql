@@ -1,0 +1,4 @@
+-- Seed data. Idempotent (ON CONFLICT DO NOTHING / fixed uuids).
+-- B0: no domain data yet — app_config is seeded inside its migration.
+-- Domain seed (cities, companies, routes, buses, trips, operator/admin accounts)
+-- arrives in B1 (BACKEND_V1 §7).
