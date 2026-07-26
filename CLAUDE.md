@@ -17,6 +17,9 @@ Contract: `docs/BACKEND_V1.md`. Never change a response shape without updating t
 - `features/*/api.ts` unwraps via `lib/envelope.ts` `unwrap()` and throws `ApiError`.
 - Error UX keys on `ApiError.code` **only** — never message text, never HTTP status.
 - Codes come from the fixed list in BACKEND_V1 §0.
+- **Envelope rule:** RPCs with a domain failure mode return the envelope (`get_trip`, `get_seat_map`,
+  all writes). `search_trips` and PostgREST table reads are bare. `api.ts` uses `unwrap()` for the
+  former and `schema.parse()` for the latter.
 - MSW handlers use the local `ok()` / `fail()` helpers in `src/mocks/handlers.ts` and simulate failure
   paths behind deterministic triggers: seat `"13"` always conflicts, phone ending `"00"` hits the
   booking limit.

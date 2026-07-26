@@ -34,3 +34,29 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+| Setting | Value | Why |
+|---|---|---|
+| Email provider | **Enabled** | operators/admins sign in with email+password (OPR-0) |
+| Allow new users to sign up | **Disabled** | accounts are admin-created only |
+| Confirm email | **Disabled** | seeded accounts have no inbox |
+| Anonymous sign-ins | **Enabled** | passenger identity in v1 |
+
+Disabling the Email *provider* (instead of just signup) breaks operator login with
+"Email logins are disabled" — these are two separate toggles.
+
+## QA scripts (hosted DEV)
+
+Backend seat-locking demos that MSW faked deterministically are reproduced on the
+DEV project with service-role scripts in `tools/qa/`. They read
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` from `.env.test`.
+
+- **Pre-lock seat 13** (QA-B-16 — lock-conflict UX):
+  ```bash
+  npx tsx tools/qa/prelock-seat-13.ts [tripId] [male|female]
+  ```
+  Holds seat `13` on a seeded trip (default: الأمانة دمشق→حلب, `n=1`) for a year so
+  `lock_seats` returns `SEAT_ALREADY_LOCKED` for it. Idempotent — re-running
+  replaces the existing seat-13 lock. Undo by releasing via the app or deleting
+  the lock row in the dashboard.

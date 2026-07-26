@@ -26,6 +26,8 @@ Audience: backend team + frontend. This is the data/RPC contract the frontend is
 `VALIDATION_ERROR · UNAUTHORIZED · FORBIDDEN · NOT_FOUND · SEAT_ALREADY_LOCKED · SEAT_ALREADY_BOOKED · LOCK_EXPIRED · TRIP_DEPARTED · IDEMPOTENCY_CONFLICT · CANCEL_WINDOW_CLOSED · BOOKING_LIMIT_REACHED`
 (OTP codes removed — passenger OTP is v1.1.)
 
+**Envelope rule:** an RPC returns the envelope when it has a real domain failure mode. `search_trips` is a bare array (a list read that cannot fail). `get_trip` and `get_seat_map` ARE enveloped — both can return `NOT_FOUND`. PostgREST table reads are always bare.
+
 ---
 
 ## 1. Auth
@@ -75,23 +77,29 @@ search_trips returns a bare jsonb array, not the §0 envelope and not a paginate
 supabase.rpc("get_seat_map", { trip_id })
 ```
 ```json
-{
+{ "ok": true, "data": {
   "layout": { "rows": 12, "cols": 4, "aisleAfterCol": 2 },
   "seats": [
     { "number": "1", "row": 0, "col": 0, "status": "available" },
     { "number": "2", "row": 0, "col": 1, "status": "locked",  "gender": "female" },
     { "number": "3", "row": 0, "col": 3, "status": "booked",  "gender": "male" }
   ]
-}
+} }
 ```
-- **Gender is present on `locked` and `booked` seats, absent on `available`.** Gender is declared at seat-selection time (see lock request) so it renders immediately, even before checkout completes.
+- **Enveloped read.** `NOT_FOUND` for a missing / draft / suspended-company trip. Departed trips ARE returned (the frontend renders the disabled state).
+- **Gender is present on `locked` and `booked` seats, absent on `available`** (the key is omitted, never null). Gender is declared at seat-selection time (see lock request) so it renders immediately, even before checkout completes.
+- **Field naming, deliberate:** the seat map emits `number`; `lock_seats` and `create_booking` accept `seatNumber`. Do not unify — the frontend is built and QA'd against this.
 
 ```
 supabase.rpc("lock_seats", { trip_id, seats: [{ "seatNumber": "12", "gender": "female" }] })
   → ok: { "lockId": "uuid", "expiresAt": "...(now+10min)" }
-  → error: SEAT_ALREADY_LOCKED / SEAT_ALREADY_BOOKED (details.seats = exactly the conflicting seats)
-supabase.rpc("release_lock", { lock_id })   → ok (idempotent; releasing a gone lock is still ok)
+  → error: SEAT_ALREADY_LOCKED / SEAT_ALREADY_BOOKED (details.seats = exactly the conflicting seats,
+           in REQUEST ORDER; booked takes precedence over locked)
+supabase.rpc("release_lock", { lock_id })   → ok, data: null (idempotent; releasing a gone lock is still ok)
 ```
+- `lock_seats` also returns (none of which MSW simulates): `UNAUTHORIZED` (no `auth.uid()`);
+  `NOT_FOUND` (missing / draft / suspended-company trip) or `TRIP_DEPARTED` (already departed);
+  `VALIDATION_ERROR` (a `seatNumber` not in the layout, or an invalid gender).
 
 Hard requirements (unchanged in spirit, new mechanism):
 - **Atomic all-or-nothing — enforced by Postgres itself:**
@@ -118,7 +126,11 @@ supabase.rpc("create_booking", {
 
 - **Idempotency:** `UNIQUE(idempotency_key)` on `bookings` + stored response replay: same key within 24h → return the original booking, never a duplicate. Same key + different payload hash → `IDEMPOTENCY_CONFLICT`.
 - One transaction: validate lock (exists, owned by caller, unexpired — else `LOCK_EXPIRED`), insert booking + passengers, snapshot `commission_rate` from company, delete the lock. Partial unique index `booking_passengers(trip_id, seat_number) WHERE active` makes double-booking impossible at the DB level.
+- **A lock that is missing, expired, or owned by another user all return `LOCK_EXPIRED` — never `FORBIDDEN`.** `FORBIDDEN` would disclose that the lock exists and belongs to someone else. Contrast `release_lock`, which DOES return `FORBIDDEN` for a non-owner: there the caller names a `lockId` they claim to own, so confirming other-ownership is the point, not a leak.
 - Passenger `gender` must equal the gender declared on that seat's lock (`VALIDATION_ERROR` otherwise) — the map never lies.
+- **Passengers must exactly cover the lock's seats** (same set — no missing, no extra) → `VALIDATION_ERROR`, `details.field = "passengers"`.
+- **Server-side phone validation:** each phone must match `^\+9639\d{8}$` → `VALIDATION_ERROR`, `details.field = "passenger.{seatNumber}.phone"`. The `VALIDATION_ERROR` field convention is `"passenger.{seatNumber}.{field}"` (the coverage error is the whole-set exception, `"passengers"`).
+- **`trip` in the response is the full §2 search-item shape** (nested `company` / `fromCity` / `toCity`, `price`, `busType`, …). Its `availableSeats` is a snapshot at booking time and has no meaning on a ticket.
 - `pnr`: 6 chars, alphabet excludes `0 O 1 I`; unique index + retry on collision.
 - `qrPayload`: `{bookingId}.{HMAC-SHA256(bookingId + tripId, secret)}` via pgcrypto; secret in Supabase Vault.
 
