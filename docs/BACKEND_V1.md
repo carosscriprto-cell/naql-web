@@ -47,6 +47,7 @@ supabase.from("companies").select().eq("slug", s)   → { id, name, logoUrl, rat
 supabase.rpc("search_trips", { from_slug, to_slug, travel_date, passengers })
 supabase.rpc("get_trip", { trip_id })
 ```
+search_trips returns a bare jsonb array, not the §0 envelope and not a paginated wrapper: it is a read, results for one route+date are small, and the frontend derives its count line from the array length. get_trip returns the envelope because it has a real failure mode (NOT_FOUND). This asymmetry is deliberate.
 
 `search_trips` item shape (frontend renders exactly this — unchanged from before):
 ```json

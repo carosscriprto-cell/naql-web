@@ -6,7 +6,7 @@ import { mocksReady } from "@/mocks/init";
 import {
   citySchema,
   tripDetailSchema,
-  tripSearchResponseSchema,
+  tripSearchListSchema,
   type City,
   type TripDetail,
   type TripSearchItem,
@@ -31,7 +31,7 @@ export async function fetchTrips(
 ): Promise<TripSearchItem[]> {
   await mocksReady();
   const response = await api.get("/trips/search", { params });
-  return unwrap(response.data, tripSearchResponseSchema).items;
+  return unwrap(response.data, tripSearchListSchema);
 }
 
 export async function getTrip(id: string): Promise<TripDetail> {

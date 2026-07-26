@@ -289,6 +289,9 @@ Verify: green + npm run db:reset clean.
 5. Parity checklist vs the frontend: every deterministic trigger the QA plan relies on is reproducible
    on staging — seat 13 pre-lock, shortened lock (LOCK_EXPIRED), BOOKING_LIMIT demo data.
 
+Also assert that anon and authenticated hold NO direct table privileges beyond what RLS policies
+require, and that the service_role grants migration did not leak privileges to either role.
+
 Verify: full suite green 3 consecutive runs; fresh clone → npm ci → npm run db:start → db:reset →
 db:test green with nothing else needed.
 ```

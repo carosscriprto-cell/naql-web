@@ -76,10 +76,7 @@ export const handlers = [
       params.get("to") ?? "",
       params.get("date") ?? "",
     );
-    return ok({
-      items,
-      meta: { page: 1, perPage: 20, total: items.length },
-    });
+    return ok(items);
   }),
 
   http.get("/api/trips/:id", ({ params }) => {

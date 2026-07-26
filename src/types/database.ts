@@ -438,6 +438,16 @@ export type Database = {
     }
     Functions: {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      get_trip: { Args: { p_trip_id: string }; Returns: Json }
+      search_trips: {
+        Args: {
+          p_from_slug: string
+          p_passengers: number
+          p_to_slug: string
+          p_travel_date: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       booking_status: "confirmed" | "cancelled"
