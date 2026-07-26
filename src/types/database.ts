@@ -54,12 +54,390 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_passengers: {
+        Row: {
+          active: boolean
+          booking_id: string
+          checked_in_at: string | null
+          full_name: string
+          gender: Database["public"]["Enums"]["gender"]
+          id: string
+          phone: string
+          seat_number: string
+          trip_id: string
+        }
+        Insert: {
+          active?: boolean
+          booking_id: string
+          checked_in_at?: string | null
+          full_name: string
+          gender: Database["public"]["Enums"]["gender"]
+          id?: string
+          phone: string
+          seat_number: string
+          trip_id: string
+        }
+        Update: {
+          active?: boolean
+          booking_id?: string
+          checked_in_at?: string | null
+          full_name?: string
+          gender?: Database["public"]["Enums"]["gender"]
+          id?: string
+          phone?: string
+          seat_number?: string
+          trip_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_passengers_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_passengers_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bookings: {
+        Row: {
+          commission_rate: number
+          created_at: string
+          id: string
+          idempotency_key: string
+          payment_method: string
+          pnr: string
+          response_snapshot: Json | null
+          status: Database["public"]["Enums"]["booking_status"]
+          total_price: number
+          trip_id: string
+          user_id: string
+        }
+        Insert: {
+          commission_rate: number
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          payment_method: string
+          pnr: string
+          response_snapshot?: Json | null
+          status?: Database["public"]["Enums"]["booking_status"]
+          total_price: number
+          trip_id: string
+          user_id: string
+        }
+        Update: {
+          commission_rate?: number
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          payment_method?: string
+          pnr?: string
+          response_snapshot?: Json | null
+          status?: Database["public"]["Enums"]["booking_status"]
+          total_price?: number
+          trip_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      buses: {
+        Row: {
+          bus_type: string
+          company_id: string
+          id: string
+          layout: Json
+          plate_number: string
+        }
+        Insert: {
+          bus_type: string
+          company_id: string
+          id?: string
+          layout: Json
+          plate_number: string
+        }
+        Update: {
+          bus_type?: string
+          company_id?: string
+          id?: string
+          layout?: Json
+          plate_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "buses_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cities: {
+        Row: {
+          id: string
+          name_ar: string
+          name_en: string
+          slug: string
+        }
+        Insert: {
+          id?: string
+          name_ar: string
+          name_en: string
+          slug: string
+        }
+        Update: {
+          id?: string
+          name_ar?: string
+          name_en?: string
+          slug?: string
+        }
+        Relationships: []
+      }
+      companies: {
+        Row: {
+          commission_rate: number
+          created_at: string
+          id: string
+          logo_url: string | null
+          name: string
+          rating: number | null
+          status: Database["public"]["Enums"]["company_status"]
+        }
+        Insert: {
+          commission_rate?: number
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          name: string
+          rating?: number | null
+          status?: Database["public"]["Enums"]["company_status"]
+        }
+        Update: {
+          commission_rate?: number
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          name?: string
+          rating?: number | null
+          status?: Database["public"]["Enums"]["company_status"]
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          id: string
+          role: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          id: string
+          role: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      routes: {
+        Row: {
+          default_duration_min: number
+          from_city_id: string
+          id: string
+          to_city_id: string
+        }
+        Insert: {
+          default_duration_min: number
+          from_city_id: string
+          id?: string
+          to_city_id: string
+        }
+        Update: {
+          default_duration_min?: number
+          from_city_id?: string
+          id?: string
+          to_city_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "routes_from_city_id_fkey"
+            columns: ["from_city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_to_city_id_fkey"
+            columns: ["to_city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seat_lock_seats: {
+        Row: {
+          gender: Database["public"]["Enums"]["gender"]
+          id: string
+          lock_id: string
+          seat_number: string
+          trip_id: string
+        }
+        Insert: {
+          gender: Database["public"]["Enums"]["gender"]
+          id?: string
+          lock_id: string
+          seat_number: string
+          trip_id: string
+        }
+        Update: {
+          gender?: Database["public"]["Enums"]["gender"]
+          id?: string
+          lock_id?: string
+          seat_number?: string
+          trip_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seat_lock_seats_lock_id_fkey"
+            columns: ["lock_id"]
+            isOneToOne: false
+            referencedRelation: "seat_locks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seat_lock_seats_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seat_locks: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          owner_id: string
+          trip_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          owner_id: string
+          trip_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          owner_id?: string
+          trip_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seat_locks_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trips: {
+        Row: {
+          arrival_at: string
+          bus_id: string
+          company_id: string
+          created_at: string
+          departure_at: string
+          id: string
+          price: number
+          route_id: string
+          status: Database["public"]["Enums"]["trip_status"]
+        }
+        Insert: {
+          arrival_at: string
+          bus_id: string
+          company_id: string
+          created_at?: string
+          departure_at: string
+          id?: string
+          price: number
+          route_id: string
+          status?: Database["public"]["Enums"]["trip_status"]
+        }
+        Update: {
+          arrival_at?: string
+          bus_id?: string
+          company_id?: string
+          created_at?: string
+          departure_at?: string
+          id?: string
+          price?: number
+          route_id?: string
+          status?: Database["public"]["Enums"]["trip_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trips_bus_id_fkey"
+            columns: ["bus_id"]
+            isOneToOne: false
+            referencedRelation: "buses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
     }
     Enums: {
       booking_status: "confirmed" | "cancelled"

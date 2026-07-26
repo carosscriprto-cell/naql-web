@@ -9,9 +9,9 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "db:whoami": "supabase projects list && node -e \"console.log('LINKED=' + require('fs').readFileSync('supabase/.temp/project-ref','utf8').trim())\"",
-    "db:reset": "supabase db reset --linked",
-    "db:test": "vitest run -c vitest.db.config.ts",
-    "db:types": "supabase gen types typescript --linked > src/types/database.ts"
+    "db:reset": "dotenv -e .env.test -- cmd /c \"echo y| supabase db reset --linked\"",
+    "db:types": "dotenv -e .env.test -- supabase gen types typescript --linked > src/types/database.ts",
+    "db:test": "vitest run -c vitest.db.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -50,6 +50,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "msw": "^2.14.6",
