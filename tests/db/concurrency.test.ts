@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeAll } from "vitest";
-import { anonClient, publicClient, serviceClient } from "./helpers";
+import { pooledAnonClient, publicClient, serviceClient, type SupabaseClient } from "./helpers";
 
 // A seeded published, future trip with 48 free seats and no bookings:
 // n=9, القدموس, دمشق→اللاذقية (supabase/seed.sql). Not touched by catalog.test.
@@ -12,6 +12,11 @@ type SeatMap = { layout: any; seats: { number: string; status: string; gender?: 
 
 function seat(map: SeatMap, number: string) {
   return map.seats.find((s) => s.number === number)!;
+}
+
+async function userId(c: SupabaseClient): Promise<string> {
+  const { data } = await c.auth.getSession(); // local read, no network
+  return data.session!.user.id;
 }
 
 async function lockSeats(client: any, seats: { seatNumber: string; gender: string }[]) {
@@ -42,7 +47,15 @@ afterEach(wipeLocks);
 
 describe("lock_seats concurrency (merge gate)", () => {
   it("10 parallel locks on the same seat → exactly 1 ok, 9 SEAT_ALREADY_LOCKED", async () => {
-    const clients = await Promise.all(Array.from({ length: 10 }, () => anonClient()));
+    // Pooled slots 0..9 — 10 distinct persistent users, reused across runs.
+    const clients = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => pooledAnonClient(i)),
+    );
+
+    // The merge gate depends on 10 DISTINCT identities — fail loudly otherwise.
+    const ids = await Promise.all(clients.map(userId));
+    expect(new Set(ids).size, `expected 10 distinct pooled users, got: ${ids.join(", ")}`).toBe(10);
+
     const results = await Promise.all(
       clients.map((c) => lockSeats(c, [{ seatNumber: "1", gender: "male" }])),
     );
@@ -54,7 +67,7 @@ describe("lock_seats concurrency (merge gate)", () => {
   });
 
   it("overlapping [5,6] vs [6,7] → one ok, the other conflicts on exactly [6], zero partial rows", async () => {
-    const [a, b] = await Promise.all([anonClient(), anonClient()]);
+    const [a, b] = await Promise.all([pooledAnonClient(10), pooledAnonClient(11)]);
     const [ra, rb] = await Promise.all([
       lockSeats(a, [
         { seatNumber: "5", gender: "male" },
@@ -90,7 +103,7 @@ describe("lock_seats concurrency (merge gate)", () => {
   });
 
   it("an expired lock frees the seat with no cleanup job, and it is lockable again", async () => {
-    const owner = await anonClient();
+    const owner = await pooledAnonClient(10);
     const res = await lockSeats(owner, [{ seatNumber: "10", gender: "male" }]);
     expect(res.ok).toBe(true);
     expect(seat(await getSeatMap(), "10").status).toBe("locked");
@@ -103,16 +116,16 @@ describe("lock_seats concurrency (merge gate)", () => {
 
     expect(seat(await getSeatMap(), "10").status).toBe("available");
 
-    const relock = await lockSeats(await anonClient(), [{ seatNumber: "10", gender: "female" }]);
+    const relock = await lockSeats(await pooledAnonClient(11), [{ seatNumber: "10", gender: "female" }]);
     expect(relock.ok).toBe(true);
   });
 
   it("release: non-owner → FORBIDDEN (seat stays locked); owner → seat freed", async () => {
-    const owner = await anonClient();
+    const owner = await pooledAnonClient(10);
     const res = await lockSeats(owner, [{ seatNumber: "12", gender: "male" }]);
     const lockId = res.data.lockId;
 
-    const stranger = await anonClient();
+    const stranger = await pooledAnonClient(11);
     const denied = (await stranger.rpc("release_lock", { p_lock_id: lockId })).data as Envelope;
     expect(denied.ok).toBe(false);
     expect(denied.error!.code).toBe("FORBIDDEN");
@@ -124,7 +137,7 @@ describe("lock_seats concurrency (merge gate)", () => {
   });
 
   it("a gender declared in a lock is visible via get_seat_map from another session", async () => {
-    await lockSeats(await anonClient(), [{ seatNumber: "20", gender: "female" }]);
+    await lockSeats(await pooledAnonClient(10), [{ seatNumber: "20", gender: "female" }]);
 
     const map = await getSeatMap(); // fresh public (different) session
     const s20 = seat(map, "20");
@@ -148,7 +161,7 @@ describe("lock_seats concurrency (merge gate)", () => {
   });
 
   it("a seat number not in the layout → VALIDATION_ERROR, nothing locked", async () => {
-    const res = await lockSeats(await anonClient(), [{ seatNumber: "999", gender: "male" }]);
+    const res = await lockSeats(await pooledAnonClient(10), [{ seatNumber: "999", gender: "male" }]);
     expect(res.ok).toBe(false);
     expect(res.error!.code).toBe("VALIDATION_ERROR");
 

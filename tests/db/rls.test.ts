@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { anonClient, publicClient } from "./helpers";
+import { pooledAnonClient, publicClient } from "./helpers";
 
 // Seeded fixture ids (see supabase/seed.sql)
 const TRIP_PUBLISHED = "000000e1-0000-4000-8000-000000000001"; // tomorrow, published
@@ -57,8 +57,10 @@ describe("RLS — public reads", () => {
 });
 
 describe("RLS — private reads", () => {
-  it("a fresh anonymous user sees none of another user's bookings", async () => {
-    const client = await anonClient();
+  it("an anonymous user sees none of another user's bookings", async () => {
+    // Pooled slot 20: any anon identity works — it owns no bookings, so the
+    // owner policy must filter the seeded booking out. No need for a fresh user.
+    const client = await pooledAnonClient(20);
     const { data, error } = await client.from("bookings").select("id");
     // authenticated has SELECT privilege, but the owner policy filters everything out.
     expect(error).toBeNull();
@@ -83,7 +85,7 @@ describe("RLS — direct writes are denied (writes go through RPCs)", () => {
   });
 
   it("an anonymous (authenticated) user cannot INSERT a booking", async () => {
-    const client = await anonClient();
+    const client = await pooledAnonClient(21); // pooled slot 21
     const { data: userRes } = await client.auth.getUser();
     const { error } = await client.from("bookings").insert({
       trip_id: TRIP_PUBLISHED,

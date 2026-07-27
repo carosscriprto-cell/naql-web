@@ -60,3 +60,18 @@ DEV project with service-role scripts in `tools/qa/`. They read
   `lock_seats` returns `SEAT_ALREADY_LOCKED` for it. Idempotent — re-running
   replaces the existing seat-13 lock. Undo by releasing via the app or deleting
   the lock row in the dashboard.
+
+## Anonymous session pool (DB tests)
+
+`tests/db/` reuses anonymous identities instead of minting one per test, because
+`signInAnonymously()` is rate-limited on the hosted DEV project (~30/hour/IP).
+`pooledAnonClient(index)` caches each slot's session under
+`node_modules/.cache/naql-anon-sessions.json` (gitignored) and restores it via the
+refresh token — so only the **first** run mints users; later runs make zero
+anonymous sign-ins for pooled slots.
+
+- **`db:reset` invalidates the pool automatically** — it wipes `auth.users`, so the
+  cached refresh tokens stop working and the pool re-mints its slots on the next run.
+  No manual step needed. (`clearAnonSessionCache()` exists as a manual escape hatch.)
+- Tests that assert a *brand-new* sign-in (smoke's "anonymous passenger can open a
+  session", claims' anonymous case) keep the real `anonClient()` / `signInAnonymously()`.
