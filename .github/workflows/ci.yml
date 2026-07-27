@@ -60,16 +60,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1 # pinned to match package.json devDependency (config keys validated against this)
+
+      # Fast fail: a config.toml typo (e.g. an unsupported [auth.email] key) should
+      # cost seconds here, not a full stack boot. `supabase status` strict-decodes
+      # config.toml before touching Docker, so a parse error surfaces immediately.
+      # We ignore the expected "stack not running" result and fail ONLY on a parse error.
+      - name: Validate config.toml parses
+        run: |
+          supabase status > config-check.log 2>&1 || true
+          if grep -q "failed to parse config" config-check.log; then
+            echo "::error::supabase/config.toml failed to parse:"
+            cat config-check.log
+            exit 1
+          fi
+          echo "config.toml parsed OK (a 'not running' / Docker message here is expected)."
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-
-      - name: Install Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
 
       - name: Start local Supabase stack
         run: supabase start

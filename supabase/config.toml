@@ -226,10 +226,11 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Email provider on — operators/admins sign in with email+password (OPR-0).
-enabled = true
+# The email provider is ON by default in the CLI — there is no `enabled` key here
+# (adding one fails config parsing). Operators/admins sign in with email+password (OPR-0).
 # Allow/disallow new user signups via email to your project.
 # Operator/admin accounts are created by an admin — never via public email signup.
+# NOTE: this (not the top-level [auth] enable_signup) is what blocks self-service signup.
 enable_signup = false
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
