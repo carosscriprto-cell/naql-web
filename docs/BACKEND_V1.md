@@ -131,6 +131,13 @@ supabase.rpc("create_booking", {
 - **Passengers must exactly cover the lock's seats** (same set — no missing, no extra) → `VALIDATION_ERROR`, `details.field = "passengers"`.
 - **Server-side phone validation:** each phone must match `^\+9639\d{8}$` → `VALIDATION_ERROR`, `details.field = "passenger.{seatNumber}.phone"`. The `VALIDATION_ERROR` field convention is `"passenger.{seatNumber}.{field}"` (the coverage error is the whole-set exception, `"passengers"`).
 - **`trip` in the response is the full §2 search-item shape** (nested `company` / `fromCity` / `toCity`, `price`, `busType`, …). Its `availableSeats` is a snapshot at booking time and has no meaning on a ticket.
+- **`status` is `confirmed | cancelled`.** `create_booking` always returns `"confirmed"` — there is no
+  path that creates a cancelled booking. `get_booking`, `lookup_booking` and `cancel_booking` (which
+  returns the ticket it just cancelled) can all return `"cancelled"`, so the frontend's `bookingSchema`
+  admits both. **`lookup_booking` deliberately still finds cancelled bookings:** the passenger needs to
+  see that the ticket is dead, and filtering them out would re-open the enumeration oracle the
+  byte-identical `NOT_FOUND` was built to close — "this PNR resolves for some phones but not others" is
+  the same leak in a different coat.
 - `pnr`: 6 chars, alphabet excludes `0 O 1 I`; unique index + retry on collision.
 - `qrPayload`: `{bookingId}.{HMAC-SHA256(bookingId + tripId, secret)}` via pgcrypto; secret in Supabase Vault.
 
@@ -192,11 +199,23 @@ trips(id, company_id, route_id, bus_id, departure_at, arrival_at, price int, sta
 seat_locks(id, trip_id, owner_id, expires_at)
 seat_lock_seats(lock_id, trip_id, seat_number, gender)        UNIQUE(trip_id, seat_number)
 bookings(id, trip_id, user_id, pnr unique, status, payment_method,
-         total_price int, commission_rate, idempotency_key unique, response_snapshot jsonb)
+         total_price int, commission_rate, idempotency_key unique,
+         payload_hash, response_snapshot jsonb)
 booking_passengers(id, booking_id, trip_id, seat_number, full_name, phone,
                    gender, active bool, checked_in_at?)
                    UNIQUE(trip_id, seat_number) WHERE active
+lookup_attempts(id, pnr, attempted_at)                        -- lookup_booking rate limiter
 ```
+
+`payload_hash` (sha256 of the canonical `create_booking` arguments) is what makes
+`IDEMPOTENCY_CONFLICT` possible: the key alone cannot tell a retry from a different
+request wearing the same key. `lookup_attempts` records **every** `lookup_booking`
+call — hits and misses alike, because a ledger that only counts misses is itself an
+oracle for which PNRs exist.
+
+`app_config` keys used by §4: `max_active_bookings_per_user`,
+`max_active_bookings_per_phone_per_trip`, `cancel_window_hours`,
+`lookup_rate_limit_max`, `lookup_rate_limit_window_minutes`.
 
 Indexes minimum: `trips(route_id, departure_at, status)`, `bookings(trip_id)`, `bookings(user_id)`, `booking_passengers(booking_id)`, `booking_passengers(phone)` (booking-limit check), `bookings(pnr)` unique.
 Seat state derivation: `booked` = active booking_passenger row; `locked` = unexpired seat_lock_seats row. No Seat table — seats derive from bus layout.

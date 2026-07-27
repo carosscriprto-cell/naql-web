@@ -12,6 +12,31 @@
 --   passenger.demo@naql.dev   → owns the seeded fully-booked trip
 
 -- ===========================================================================
+-- QR HMAC secret (BACKEND_V1 §4) — DEV/CI ONLY.
+--
+-- create_booking reads this through vault.decrypted_secrets and refuses to run
+-- without it. The CI runner boots a blank local stack whose Vault is empty, so
+-- every create_booking test would fail there; this creates a FIXED, well-known
+-- value if (and only if) the secret is absent.
+--
+-- Why this cannot leak into production: seed.sql runs on `supabase db reset`
+-- only. PROD receives `supabase migration up` and is never reset (see
+-- docs/BACKEND_EXECUTION_PLAN §1), so this branch never executes there. PROD's
+-- real secret is created once by hand — README → "Pre-launch checklist".
+-- If a secret already exists (a real one on a hosted project), it is left alone.
+-- ===========================================================================
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'qr_hmac_secret') then
+    perform vault.create_secret(
+      'naql-dev-qr-hmac-secret-do-not-use-in-production',
+      'qr_hmac_secret',
+      'QR ticket HMAC key. THIS IS THE DEV/CI VALUE seeded by supabase/seed.sql — PROD must get its own, created manually (README pre-launch checklist).'
+    );
+  end if;
+end $$;
+
+-- ===========================================================================
 -- Cities (uuid("c1", n) from the mock)
 -- ===========================================================================
 insert into public.cities (id, name_ar, name_en, slug) values

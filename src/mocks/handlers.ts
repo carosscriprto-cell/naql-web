@@ -1,6 +1,13 @@
 import { http, HttpResponse } from "msw";
 
-import { getCities, getSeatMap, getTrip, searchTrips } from "./data";
+import {
+  getCities,
+  getSeatMap,
+  getTrip,
+  searchTrips,
+  trips,
+  type TripDetail,
+} from "./data";
 
 // §0 envelope helpers — every handler returns { ok: true, data } on success
 // or { ok: false, error } on failure. Shared by all current and future routes.
@@ -26,6 +33,15 @@ type CreateBookingBody = {
   paymentMethod: string;
   passengers: BookingPassenger[];
 };
+type BookingRecord = {
+  id: string;
+  pnr: string;
+  status: "confirmed" | "cancelled";
+  qrPayload: string;
+  trip: TripDetail | undefined;
+  passengers: BookingPassenger[];
+  totalPrice: number;
+};
 
 const LOCK_TTL_MS = 10 * 60_000;
 
@@ -37,6 +53,31 @@ const locksById = new Map<string, { tripId: string; seats: string[] }>();
 const bookedByTrip = new Map<string, Map<string, Gender>>();
 // idempotencyKey → { payload hash, stored response } for replay (mirrors §4).
 const idempotencyStore = new Map<string, { hash: string; data: unknown }>();
+
+// PNR → booking, the index behind lookup (§4). Seeded with a CANCELLED booking
+// so the cancelled ticket state is demoable before any booking is made:
+//   POST /api/bookings/lookup  { "pnr": "CANCLD", "phone": "+963911223344" }
+const CANCELLED_BOOKING: BookingRecord = {
+  id: "000000e9-0000-4000-8000-000000000001",
+  pnr: "CANCLD",
+  status: "cancelled",
+  // Still a well-formed payload — a cancelled ticket's QR scans and is REJECTED
+  // at the gate; it does not become unreadable.
+  qrPayload: "000000e9-0000-4000-8000-000000000001.cancelled",
+  trip: getTrip(trips[0].id),
+  passengers: [
+    {
+      seatNumber: "5",
+      fullName: "سمير حسن",
+      phone: "+963911223344",
+      gender: "male",
+    },
+  ],
+  totalPrice: trips[0].price,
+};
+const bookingsByPnr = new Map<string, BookingRecord>([
+  [CANCELLED_BOOKING.pnr, CANCELLED_BOOKING],
+]);
 
 // PNR alphabet excludes 0 O 1 I (docs/BACKEND_V1.md §4).
 const PNR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -186,7 +227,8 @@ export const handlers = [
 
     const trip = getTrip(lock.tripId);
     const id = crypto.randomUUID();
-    const data = {
+    // create_booking never produces a cancelled booking — only cancel_booking does.
+    const data: BookingRecord = {
       id,
       pnr: makePnr(),
       status: "confirmed",
@@ -195,6 +237,7 @@ export const handlers = [
       passengers: body.passengers,
       totalPrice: (trip?.price ?? 0) * body.passengers.length,
     };
+    bookingsByPnr.set(data.pnr, data);
 
     // Consume the lock → mark seats booked so the map stays truthful.
     const booked = bookedByTrip.get(lock.tripId) ?? new Map<string, Gender>();
@@ -208,5 +251,20 @@ export const handlers = [
 
     idempotencyStore.set(body.idempotencyKey, { hash: bookingHash(body), data });
     return ok(data);
+  }),
+
+  // Cross-device ticket retrieval (§4). The (pnr, phone) PAIR must match a
+  // passenger on that booking; a wrong pnr and a wrong phone return the SAME
+  // NOT_FOUND, so the response never reveals which half was right.
+  // Cancelled bookings ARE returned — the passenger needs to see the ticket is
+  // dead, and filtering them out would re-open the enumeration leak.
+  http.post("/api/bookings/lookup", async ({ request }) => {
+    const body = (await request.json()) as { pnr?: string; phone?: string };
+    const booking = bookingsByPnr.get((body.pnr ?? "").trim().toUpperCase());
+    const phone = (body.phone ?? "").trim();
+    const matched = booking?.passengers.some((p) => p.phone === phone);
+    return matched && booking
+      ? ok(booking)
+      : fail("NOT_FOUND", "لم نعثر على حجز بهذه البيانات");
   }),
 ];

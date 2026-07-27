@@ -2,7 +2,6 @@
 
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
-import { CheckCircle2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -10,25 +9,33 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { Booking } from "../schemas";
 import { GenderIcon } from "./gender-icon";
 import { PnrCopy } from "./pnr-copy";
+import { TicketStatusHeader } from "./ticket-status-header";
 
+// A cancelled ticket is read-only: no cancel action is offered here, and the
+// frontend never calls cancel_booking from this screen (Task E4 owns that flow).
 export function BookingTicket({ booking }: { booking: Booking }) {
   const t = useTranslations("confirmation");
   const { trip, passengers } = booking;
   const departure = new Date(trip.departureAt);
+  const cancelled = booking.status === "cancelled";
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <CheckCircle2Icon className="text-primary size-12" aria-hidden />
-        <h1 className="text-xl font-bold">{t("title")}</h1>
-        <p className="text-muted-foreground text-sm">{t("subtitle")}</p>
-      </div>
+      <TicketStatusHeader status={booking.status} />
 
       <PnrCopy pnr={booking.pnr} />
 
       <Card>
         <CardContent className="flex justify-center">
-          <QRCodeSVG value={booking.qrPayload} size={160} title={t("qrAlt")} />
+          {/* The QR is worthless at the gate once cancelled — showing it invites
+              a passenger to travel on a dead ticket. */}
+          {cancelled ? (
+            <p className="text-muted-foreground py-12 text-center text-sm">
+              {t("qrVoid")}
+            </p>
+          ) : (
+            <QRCodeSVG value={booking.qrPayload} size={160} title={t("qrAlt")} />
+          )}
         </CardContent>
       </Card>
 

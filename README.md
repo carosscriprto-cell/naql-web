@@ -61,6 +61,42 @@ DEV project with service-role scripts in `tools/qa/`. They read
   replaces the existing seat-13 lock. Undo by releasing via the app or deleting
   the lock row in the dashboard.
 
+- **Shorten a lock** (LOCK_EXPIRED UX — no 10-minute wait):
+  ```bash
+  npx tsx tools/qa/shorten-lock.ts <lockId>
+  npx tsx tools/qa/shorten-lock.ts --trip <tripId>          # newest lock on that trip
+  npx tsx tools/qa/shorten-lock.ts --trip <tripId> --in 30  # expire in 30s instead
+  ```
+  Moves `expires_at` into the past (or `--in N` seconds ahead) and **keeps the lock
+  row**, so `create_booking` still finds it and rejects it with `LOCK_EXPIRED` —
+  the same state a real timeout produces. `get_seat_map` frees the seats on the
+  next poll. Hold seats in the browser first, then run it with `--trip`.
+
+## Pre-launch checklist (PROD only)
+
+PROD receives `supabase migration up` and is **never** reset, so `supabase/seed.sql`
+never runs there. Everything the seed does for DEV/CI must be done by hand once:
+
+- [ ] **Create the QR HMAC secret in Vault.** `create_booking` signs every
+      `qrPayload` with it and raises a loud error if it is missing — nothing can be
+      booked until this exists. In the SQL editor of the PROD project (this is the
+      one and only exception to "never write SQL in the dashboard" — a secret must
+      not be committed to a migration):
+      ```sql
+      select vault.create_secret(
+        '<a fresh 32+ byte random string>',
+        'qr_hmac_secret',
+        'QR ticket HMAC key (production)'
+      );
+      ```
+      Verify: `select name from vault.decrypted_secrets where name = 'qr_hmac_secret';`
+      The name must be exactly `qr_hmac_secret`. **Do not reuse the DEV/CI value**
+      seeded by `supabase/seed.sql` — it is public in this repo, and anyone holding
+      it can forge a check-in QR.
+- [ ] Configure the dashboard auth settings (see the table above — they are not in
+      `config.toml`) and register the custom access token hook.
+- [ ] Rotate every seeded credential; the `Password123!` accounts are DEV-only.
+
 ## Anonymous session pool (DB tests)
 
 `tests/db/` reuses anonymous identities instead of minting one per test, because

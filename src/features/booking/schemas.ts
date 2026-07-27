@@ -60,10 +60,15 @@ export const bookingPassengerSchema = z.object({
   gender: genderSchema,
 });
 
+// status: create_booking only ever returns "confirmed", but get_booking,
+// lookup_booking and cancel_booking can all return a cancelled ticket
+// (docs/BACKEND_V1.md §4) — so the schema has to admit both.
+export const bookingStatusSchema = z.enum(["confirmed", "cancelled"]);
+
 export const bookingSchema = z.object({
   id: z.string(),
   pnr: z.string(),
-  status: z.literal("confirmed"),
+  status: bookingStatusSchema,
   qrPayload: z.string(),
   trip: tripSearchItemSchema,
   passengers: z.array(bookingPassengerSchema),
@@ -82,6 +87,7 @@ export type PassengerFormValues = z.infer<
 export type CheckoutFormValues = z.infer<
   ReturnType<typeof buildCheckoutSchema>
 >;
+export type BookingStatus = z.infer<typeof bookingStatusSchema>;
 export type BookingPassenger = z.infer<typeof bookingPassengerSchema>;
 export type Booking = z.infer<typeof bookingSchema>;
 export type CreateBookingPayload = {

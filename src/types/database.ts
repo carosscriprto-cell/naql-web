@@ -111,6 +111,7 @@ export type Database = {
           created_at: string
           id: string
           idempotency_key: string
+          payload_hash: string | null
           payment_method: string
           pnr: string
           response_snapshot: Json | null
@@ -124,6 +125,7 @@ export type Database = {
           created_at?: string
           id?: string
           idempotency_key: string
+          payload_hash?: string | null
           payment_method: string
           pnr: string
           response_snapshot?: Json | null
@@ -137,6 +139,7 @@ export type Database = {
           created_at?: string
           id?: string
           idempotency_key?: string
+          payload_hash?: string | null
           payment_method?: string
           pnr?: string
           response_snapshot?: Json | null
@@ -235,6 +238,24 @@ export type Database = {
           name?: string
           rating?: number | null
           status?: Database["public"]["Enums"]["company_status"]
+        }
+        Relationships: []
+      }
+      lookup_attempts: {
+        Row: {
+          attempted_at: string
+          id: string
+          pnr: string
+        }
+        Insert: {
+          attempted_at?: string
+          id?: string
+          pnr: string
+        }
+        Update: {
+          attempted_at?: string
+          id?: string
+          pnr?: string
         }
         Relationships: []
       }
@@ -437,10 +458,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      booking_ticket: { Args: { p_booking_id: string }; Returns: Json }
+      cancel_booking: { Args: { p_booking_id: string }; Returns: Json }
+      create_booking: {
+        Args: {
+          p_idempotency_key: string
+          p_lock_id: string
+          p_passengers: Json
+          p_payment_method: string
+        }
+        Returns: Json
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      generate_pnr: { Args: never; Returns: string }
+      get_booking: { Args: { p_id: string }; Returns: Json }
       get_seat_map: { Args: { p_trip_id: string }; Returns: Json }
       get_trip: { Args: { p_trip_id: string }; Returns: Json }
       lock_seats: { Args: { p_seats: Json; p_trip_id: string }; Returns: Json }
+      lookup_booking: {
+        Args: { p_phone: string; p_pnr: string }
+        Returns: Json
+      }
+      qr_hmac_secret: { Args: never; Returns: string }
       release_lock: { Args: { p_lock_id: string }; Returns: Json }
       search_trips: {
         Args: {
