@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { publicClient, serviceClient } from "./helpers";
+import {
+  publicClient,
+  serviceClient,
+  okData,
+  type Envelope,
+  type TripItem,
+  type TripDetail,
+} from "./helpers";
 
 // Seed fixtures (supabase/seed.sql).
 const AMANA = "000000a1-0000-4000-8000-000000000001";
@@ -47,7 +54,7 @@ async function search(from: string, to: string, date: string, passengers = 1) {
     p_passengers: passengers,
   });
   expect(error, `search_trips error: ${error?.message}`).toBeNull();
-  return data as any[];
+  return data as TripItem[];
 }
 
 describe("search_trips", () => {
@@ -171,29 +178,28 @@ describe("search_trips", () => {
 });
 
 describe("get_trip", () => {
-  async function getTrip(id: string) {
+  async function getTrip(id: string): Promise<Envelope<TripDetail>> {
     const { data, error } = await publicClient().rpc("get_trip", { p_trip_id: id });
     expect(error, `get_trip error: ${error?.message}`).toBeNull();
-    return data as { ok: boolean; data?: any; error?: { code: string } };
+    return data as Envelope<TripDetail>;
   }
 
   it("returns ok for the departed trip (frontend renders the disabled CTA)", async () => {
-    const res = await getTrip(TRIP_DEPARTED);
-    expect(res.ok).toBe(true);
-    expect(res.data.id).toBe(TRIP_DEPARTED);
-    expect(res.data.cancellationPolicy).toBeTruthy();
-    expect(res.data.currency).toBe("SYP");
+    const trip = okData(await getTrip(TRIP_DEPARTED));
+    expect(trip.id).toBe(TRIP_DEPARTED);
+    expect(trip.cancellationPolicy).toBeTruthy();
+    expect(trip.currency).toBe("SYP");
   });
 
   it("returns NOT_FOUND for a draft trip", async () => {
     const res = await getTrip(TRIP_DRAFT);
-    expect(res.ok).toBe(false);
-    expect(res.error!.code).toBe("NOT_FOUND");
+    if (res.ok) throw new Error("expected NOT_FOUND");
+    expect(res.error.code).toBe("NOT_FOUND");
   });
 
   it("returns NOT_FOUND for a missing trip id", async () => {
     const res = await getTrip("00000000-0000-4000-8000-0000000fffff");
-    expect(res.ok).toBe(false);
-    expect(res.error!.code).toBe("NOT_FOUND");
+    if (res.ok) throw new Error("expected NOT_FOUND");
+    expect(res.error.code).toBe("NOT_FOUND");
   });
 });

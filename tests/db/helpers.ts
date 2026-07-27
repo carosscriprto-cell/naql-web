@@ -34,6 +34,58 @@ function newClient(): SupabaseClient {
 }
 
 // ===========================================================================
+// RPC payload shapes (BACKEND_V1 §0 envelope, §2 catalog, §3 seat map/lock).
+// Defined locally so the test harness stays decoupled from src/.
+// ===========================================================================
+export type Envelope<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      error: { code: string; message: string; details?: Record<string, unknown> };
+    };
+
+/** Narrow an envelope to its ok branch, throwing (test failure) otherwise. */
+export function okData<T>(env: Envelope<T>): T {
+  if (!env.ok) {
+    throw new Error(`expected ok envelope, got ${env.error.code}: ${env.error.message}`);
+  }
+  return env.data;
+}
+
+export type Gender = "male" | "female";
+export type SeatStatus = "available" | "locked" | "booked";
+
+export type Seat = {
+  number: string;
+  row: number;
+  col: number;
+  status: SeatStatus;
+  gender?: Gender; // present only on locked/booked
+};
+
+export type SeatMap = {
+  layout: { rows: number; cols: number; aisleAfterCol: number };
+  seats: Seat[];
+};
+
+export type LockResponse = { lockId: string; expiresAt: string };
+
+export type TripItem = {
+  id: string;
+  company: { id: string; name: string; logoUrl: string; rating: number };
+  fromCity: { id: string; nameAr: string };
+  toCity: { id: string; nameAr: string };
+  departureAt: string;
+  arrivalAt: string;
+  price: number;
+  currency: "SYP";
+  availableSeats: number;
+  busType: "عادي" | "VIP";
+};
+
+export type TripDetail = TripItem & { cancellationPolicy: string };
+
+// ===========================================================================
 // Anonymous sign-in with backoff. signInAnonymously() is rate-limited on the
 // hosted project (default 30/hour/IP), so the raw call is wrapped in a retry
 // and every real sign-in is counted for reporting.

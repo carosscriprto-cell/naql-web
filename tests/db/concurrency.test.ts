@@ -1,14 +1,20 @@
 import { describe, it, expect, afterEach, beforeAll } from "vitest";
-import { pooledAnonClient, publicClient, serviceClient, type SupabaseClient } from "./helpers";
+import {
+  pooledAnonClient,
+  publicClient,
+  serviceClient,
+  okData,
+  type SupabaseClient,
+  type Envelope,
+  type SeatMap,
+  type LockResponse,
+} from "./helpers";
 
 // A seeded published, future trip with 48 free seats and no bookings:
 // n=9, القدموس, دمشق→اللاذقية (supabase/seed.sql). Not touched by catalog.test.
 const TRIP = "000000e1-0000-4000-8000-000000000009";
 
 const svc = serviceClient();
-
-type Envelope = { ok: boolean; data?: any; error?: { code: string; details?: any } };
-type SeatMap = { layout: any; seats: { number: string; status: string; gender?: string }[] };
 
 function seat(map: SeatMap, number: string) {
   return map.seats.find((s) => s.number === number)!;
@@ -19,21 +25,24 @@ async function userId(c: SupabaseClient): Promise<string> {
   return data.session!.user.id;
 }
 
-async function lockSeats(client: any, seats: { seatNumber: string; gender: string }[]) {
+async function lockSeats(
+  client: SupabaseClient,
+  seats: { seatNumber: string; gender: string }[],
+): Promise<Envelope<LockResponse>> {
   const { data, error } = await client.rpc("lock_seats", {
     p_trip_id: TRIP,
     p_seats: seats,
   });
   expect(error, `lock_seats raised: ${error?.message}`).toBeNull();
-  return data as Envelope;
+  return data as Envelope<LockResponse>;
 }
 
 async function getSeatMap(): Promise<SeatMap> {
   const { data, error } = await publicClient().rpc("get_seat_map", { p_trip_id: TRIP });
   expect(error, `get_seat_map raised: ${error?.message}`).toBeNull();
-  const env = data as Envelope; // get_seat_map is enveloped (BACKEND_V1 §3)
-  expect(env.ok, `get_seat_map not ok: ${JSON.stringify(env.error)}`).toBe(true);
-  return env.data as SeatMap;
+  const env = data as Envelope<SeatMap>; // get_seat_map is enveloped (BACKEND_V1 §3)
+  if (!env.ok) throw new Error(`get_seat_map not ok: ${JSON.stringify(env.error)}`);
+  return env.data;
 }
 
 // Wipe every lock on the test trip so each case starts from 48 free seats and
@@ -61,7 +70,7 @@ describe("lock_seats concurrency (merge gate)", () => {
     );
 
     const ok = results.filter((r) => r.ok);
-    const locked = results.filter((r) => !r.ok && r.error!.code === "SEAT_ALREADY_LOCKED");
+    const locked = results.filter((r) => !r.ok && r.error.code === "SEAT_ALREADY_LOCKED");
     expect(ok).toHaveLength(1);
     expect(locked).toHaveLength(9);
   });
@@ -79,12 +88,11 @@ describe("lock_seats concurrency (merge gate)", () => {
       ]),
     ]);
 
-    const winners = [ra, rb].filter((r) => r.ok);
-    const losers = [ra, rb].filter((r) => !r.ok);
-    expect(winners).toHaveLength(1);
-    expect(losers).toHaveLength(1);
-    expect(losers[0].error!.code).toBe("SEAT_ALREADY_LOCKED");
-    expect(losers[0].error!.details.seats).toEqual(["6"]); // only the overlap
+    expect([ra, rb].filter((r) => r.ok)).toHaveLength(1);
+    const loser = ra.ok ? rb : ra;
+    if (loser.ok) throw new Error("expected exactly one loser");
+    expect(loser.error.code).toBe("SEAT_ALREADY_LOCKED");
+    expect(loser.error.details?.seats).toEqual(["6"]); // only the overlap
 
     const { data: rows } = await svc
       .from("seat_lock_seats")
@@ -104,15 +112,14 @@ describe("lock_seats concurrency (merge gate)", () => {
 
   it("an expired lock frees the seat with no cleanup job, and it is lockable again", async () => {
     const owner = await pooledAnonClient(10);
-    const res = await lockSeats(owner, [{ seatNumber: "10", gender: "male" }]);
-    expect(res.ok).toBe(true);
+    const { lockId } = okData(await lockSeats(owner, [{ seatNumber: "10", gender: "male" }]));
     expect(seat(await getSeatMap(), "10").status).toBe("locked");
 
     // Force expiry directly in the table — no background job runs.
     await svc
       .from("seat_locks")
       .update({ expires_at: new Date(Date.now() - 60_000).toISOString() })
-      .eq("id", res.data.lockId);
+      .eq("id", lockId);
 
     expect(seat(await getSeatMap(), "10").status).toBe("available");
 
@@ -122,16 +129,16 @@ describe("lock_seats concurrency (merge gate)", () => {
 
   it("release: non-owner → FORBIDDEN (seat stays locked); owner → seat freed", async () => {
     const owner = await pooledAnonClient(10);
-    const res = await lockSeats(owner, [{ seatNumber: "12", gender: "male" }]);
-    const lockId = res.data.lockId;
+    const { lockId } = okData(await lockSeats(owner, [{ seatNumber: "12", gender: "male" }]));
 
     const stranger = await pooledAnonClient(11);
-    const denied = (await stranger.rpc("release_lock", { p_lock_id: lockId })).data as Envelope;
-    expect(denied.ok).toBe(false);
-    expect(denied.error!.code).toBe("FORBIDDEN");
+    const denied = (await stranger.rpc("release_lock", { p_lock_id: lockId }))
+      .data as Envelope<null>;
+    if (denied.ok) throw new Error("expected release_lock to be denied");
+    expect(denied.error.code).toBe("FORBIDDEN");
     expect(seat(await getSeatMap(), "12").status).toBe("locked");
 
-    const freed = (await owner.rpc("release_lock", { p_lock_id: lockId })).data as Envelope;
+    const freed = (await owner.rpc("release_lock", { p_lock_id: lockId })).data as Envelope<null>;
     expect(freed.ok).toBe(true);
     expect(seat(await getSeatMap(), "12").status).toBe("available");
   });
@@ -155,15 +162,15 @@ describe("lock_seats concurrency (merge gate)", () => {
         p_trip_id: TRIP,
         p_seats: [{ seatNumber: "1", gender: "male" }],
       })
-    ).data as Envelope;
-    expect(res.ok).toBe(false);
-    expect(res.error!.code).toBe("UNAUTHORIZED");
+    ).data as Envelope<LockResponse>;
+    if (res.ok) throw new Error("expected UNAUTHORIZED");
+    expect(res.error.code).toBe("UNAUTHORIZED");
   });
 
   it("a seat number not in the layout → VALIDATION_ERROR, nothing locked", async () => {
     const res = await lockSeats(await pooledAnonClient(10), [{ seatNumber: "999", gender: "male" }]);
-    expect(res.ok).toBe(false);
-    expect(res.error!.code).toBe("VALIDATION_ERROR");
+    if (res.ok) throw new Error("expected VALIDATION_ERROR");
+    expect(res.error.code).toBe("VALIDATION_ERROR");
 
     const { data: rows } = await svc
       .from("seat_lock_seats")
