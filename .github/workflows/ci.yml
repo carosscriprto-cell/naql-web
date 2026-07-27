@@ -128,8 +128,19 @@ jobs:
 
       - name: Generated types are committed and fresh
         run: |
-          supabase gen types typescript --local > src/types/database.ts
-          git diff --exit-code src/types/
+          supabase gen types typescript --local > /tmp/types.gen.ts
+          # `--local` and `--linked` differ structurally: the hosted generator emits an
+          # __InternalSupabase.PostgrestVersion block and a different trailing newline.
+          # Compare the schema content only.
+          norm() {
+            sed '/__InternalSupabase: {/,/^  }$/d' "$1" \
+              | sed '/Allows to automatically instantiate createClient/d' \
+              | sed '/instead of createClient<Database/d' \
+              | sed -e :a -e '/^\n*$/{$d;N;};/\n$/ba'
+          }
+          norm src/types/database.ts > /tmp/committed.norm
+          norm /tmp/types.gen.ts     > /tmp/generated.norm
+          diff -u /tmp/committed.norm /tmp/generated.norm
 
       - name: Stop stack
         if: always()
