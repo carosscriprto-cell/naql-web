@@ -181,7 +181,8 @@ enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
 # REQUIRED: anonymous sign-ins go through the signup path, so this must stay true.
-# Operator/admin email signup is disabled separately in [auth.email] below.
+# (On this local stack email signup is also allowed — see the note in [auth.email].
+#  Public-signup anti-abuse is enforced on hosted DEV/PROD via the dashboard, not here.)
 enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = true  # passenger identity (BACKEND_V1 §1)
@@ -228,16 +229,14 @@ web3 = 30
 [auth.email]
 # The email provider is ON by default in the CLI — there is no `enabled` key here
 # (adding one fails config parsing). Operators/admins sign in with email+password (OPR-0).
-# Allow/disallow new user signups via email to your project.
-# Operator/admin accounts are created by an admin — never via public email signup.
-# NOTE: this (not the top-level [auth] enable_signup) is what blocks self-service signup.
-enable_signup = false
-# If enabled, a user will be required to confirm any email change on both the old, and new email
-# addresses. If disabled, only the new email is required to confirm.
-double_confirm_changes = false
-# If enabled, users need to confirm their email address before signing in.
-# Seeded accounts have no inbox → confirmations stay off.
+# The CLI has no separate provider toggle: enable_signup here also gates email LOGIN.
+# Setting it false yields "Email logins are disabled" and breaks operator/admin sign-in.
+# Divergence from the hosted DEV project is deliberate and safe:
+#   hosted DEV/PROD : Allow new signups = OFF (dashboard) — real anti-abuse boundary
+#   local CI stack  : signup allowed — ephemeral, no public exposure, nothing to abuse
+enable_signup = true
 enable_confirmations = false
+double_confirm_changes = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.

@@ -89,6 +89,12 @@ jobs:
       - name: Start local Supabase stack
         run: supabase start
 
+      # Diagnostic: confirm GoTrue got the intended auth flags (email login on,
+      # signup allowed, anonymous on). Container name is supabase_auth_<project_id>
+      # (project_id = "naql-db"). Non-fatal — never gate the suite on a debug probe.
+      - name: Debug GoTrue config
+        run: docker exec supabase_auth_naql-db env | grep -i "EXTERNAL_EMAIL\|DISABLE_SIGNUP\|ANONYMOUS" || true
+
       - name: Apply all migrations + seed from zero
         run: supabase db reset
 
