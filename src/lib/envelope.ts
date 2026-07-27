@@ -8,7 +8,11 @@ const envelopeSchema = z.discriminatedUnion("ok", [
     error: z.object({
       code: z.string(),
       message: z.string(),
-      details: z.record(z.string(), z.unknown()).optional(),
+      // .nullish(), not .optional(): the RPCs emit an explicit `details: null`
+      // and MSW omits the key — both mean "no details" (BACKEND_V1 §0
+      // `details` rule). .optional() rejects null and turns every real backend
+      // domain error into a ZodError instead of an ApiError.
+      details: z.record(z.string(), z.unknown()).nullish(),
     }),
   }),
 ]);

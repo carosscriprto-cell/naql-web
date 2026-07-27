@@ -258,12 +258,24 @@ describe("create_booking — double-booking is impossible", () => {
     expect(winners).toHaveLength(1);
 
     const loser = (a.ok ? b : a) as Extract<Envelope<Ticket>, { ok: false }>;
-    // Both outcomes are correct under §4 and which one appears depends purely on
-    // interleaving: if the loser read the seat lock before the winner committed
-    // it reaches the insert and the partial unique index rejects it
-    // (SEAT_ALREADY_BOOKED); if it read afterwards the lock was already consumed
-    // (LOCK_EXPIRED). The invariants below are what must never vary.
+    // EXACTLY TWO legal interleavings, both correct under §4:
+    //   - the loser read the lock BEFORE the winner committed → it reaches the
+    //     insert and the partial unique index rejects it → SEAT_ALREADY_BOOKED;
+    //   - the loser read the lock AFTER the winner committed → the lock was
+    //     already consumed → LOCK_EXPIRED.
     // The deterministic SEAT_ALREADY_BOOKED mapping is asserted in the next test.
+    //
+    // VALIDATION_ERROR is NOT a third outcome. It used to be: step (b) read the
+    // lock row and step (d) re-read its seats, two statements and therefore two
+    // READ COMMITTED snapshots, so the winner's `delete from seat_locks` could
+    // land between them and leave the loser holding a live lock with no seats —
+    // which fell through to the passenger-coverage check and blamed the caller's
+    // (perfectly valid) passenger data for a lost race. That distinction is not
+    // cosmetic: the frontend renders VALIDATION_ERROR as a checkout form-field
+    // error, while LOCK_EXPIRED opens the expiry dialog and returns the
+    // passenger to the seat map — the only outcome that offers a way forward.
+    // 20260727130000_create_booking_lock_single_snapshot.sql reads the lock and
+    // its seats in ONE statement, so the empty-seat-set state is unobservable.
     expect(["SEAT_ALREADY_BOOKED", "LOCK_EXPIRED"]).toContain(loser.error.code);
 
     expect(await bookingRows()).toHaveLength(1);

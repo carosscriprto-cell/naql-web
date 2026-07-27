@@ -39,13 +39,17 @@ export function TripCard({
             </span>
             <div>
               <p className="text-sm font-semibold">{trip.company.name}</p>
-              <p className="text-muted-foreground flex items-center gap-1 text-xs">
-                <StarIcon
-                  className="size-3 fill-amber-400 text-amber-400"
-                  aria-hidden
-                />
-                {trip.company.rating}
-              </p>
+              {/* rating is nullable (§2) — an unrated company shows no rating
+                  row at all, never a 0 or a dash. */}
+              {trip.company.rating !== null && (
+                <p className="text-muted-foreground flex items-center gap-1 text-xs">
+                  <StarIcon
+                    className="size-3 fill-amber-400 text-amber-400"
+                    aria-hidden
+                  />
+                  {trip.company.rating}
+                </p>
+              )}
             </div>
           </div>
           <Badge variant={trip.busType === "VIP" ? "default" : "outline"}>

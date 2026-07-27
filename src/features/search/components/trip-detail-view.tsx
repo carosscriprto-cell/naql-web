@@ -89,13 +89,17 @@ export function TripDetailView({ trip }: { trip: TripDetail }) {
                 <p className="font-semibold">{trip.company.name}</p>
               </div>
             </div>
-            <p className="text-muted-foreground flex items-center gap-1 text-sm">
-              <StarIcon
-                className="size-4 fill-amber-400 text-amber-400"
-                aria-hidden
-              />
-              {trip.company.rating}
-            </p>
+            {/* rating is nullable (§2) — omit the element for an unrated
+                company rather than rendering a 0 or a placeholder. */}
+            {trip.company.rating !== null && (
+              <p className="text-muted-foreground flex items-center gap-1 text-sm">
+                <StarIcon
+                  className="size-4 fill-amber-400 text-amber-400"
+                  aria-hidden
+                />
+                {trip.company.rating}
+              </p>
+            )}
           </CardContent>
         </Card>
 

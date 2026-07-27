@@ -1,14 +1,11 @@
 import { http, HttpResponse } from "msw";
 
-import {
-  getCities,
-  getSeatMap,
-  getTrip,
-  searchTrips,
-  trips,
-  type TripDetail,
-} from "./data";
+import { getSeatMap, getTrip, trips, type TripDetail } from "./data";
 
+// Catalog + search (cities, /trips/search, /trips/:id) moved to Supabase in E2 —
+// their handlers are gone. What is left is the booking flow, which MSW still
+// owns until E3. `getTrip` stays imported: bookings embed the trip fixture.
+//
 // §0 envelope helpers — every handler returns { ok: true, data } on success
 // or { ok: false, error } on failure. Shared by all current and future routes.
 const ok = (data: unknown) => HttpResponse.json({ ok: true, data });
@@ -108,23 +105,6 @@ function activeLocks(tripId: string): Map<string, LockedSeat> {
 }
 
 export const handlers = [
-  http.get("/api/cities", () => ok(getCities())),
-
-  http.get("/api/trips/search", ({ request }) => {
-    const params = new URL(request.url).searchParams;
-    const items = searchTrips(
-      params.get("from") ?? "",
-      params.get("to") ?? "",
-      params.get("date") ?? "",
-    );
-    return ok(items);
-  }),
-
-  http.get("/api/trips/:id", ({ params }) => {
-    const trip = getTrip(String(params.id));
-    return trip ? ok(trip) : fail("NOT_FOUND", "الرحلة غير موجودة");
-  }),
-
   // Base map overlaid with live locks + session bookings so gender is visible
   // to every viewer.
   http.get("/api/trips/:id/seats", ({ params }) => {
@@ -178,7 +158,10 @@ export const handlers = [
     for (const seat of requested) {
       locks.set(seat.seatNumber, { gender: seat.gender, expiresAt });
     }
-    locksById.set(lockId, { tripId, seats: requested.map((s) => s.seatNumber) });
+    locksById.set(lockId, {
+      tripId,
+      seats: requested.map((s) => s.seatNumber),
+    });
     return ok({ lockId, expiresAt: new Date(expiresAt).toISOString() });
   }),
 
@@ -249,7 +232,10 @@ export const handlers = [
     bookedByTrip.set(lock.tripId, booked);
     locksById.delete(body.lockId);
 
-    idempotencyStore.set(body.idempotencyKey, { hash: bookingHash(body), data });
+    idempotencyStore.set(body.idempotencyKey, {
+      hash: bookingHash(body),
+      data,
+    });
     return ok(data);
   }),
 

@@ -26,6 +26,11 @@ Audience: backend team + frontend. This is the data/RPC contract the frontend is
 `VALIDATION_ERROR · UNAUTHORIZED · FORBIDDEN · NOT_FOUND · SEAT_ALREADY_LOCKED · SEAT_ALREADY_BOOKED · LOCK_EXPIRED · TRIP_DEPARTED · IDEMPOTENCY_CONFLICT · CANCEL_WINDOW_CLOSED · BOOKING_LIMIT_REACHED`
 (OTP codes removed — passenger OTP is v1.1.)
 
+**`details` rule:** `details` is optional: it may be ABSENT or explicitly `null` — both mean "no details".
+Consumers must accept either. The Postgres RPCs emit `'details', null` because `jsonb_build_object`
+cannot omit a key conditionally without extra machinery; MSW omits it. Parsers therefore use
+`.nullish()`, not `.optional()`.
+
 **Envelope rule:** an RPC returns the envelope when it has a real domain failure mode. `search_trips` is a bare array (a list read that cannot fail). `get_trip` and `get_seat_map` ARE enveloped — both can return `NOT_FOUND`. PostgREST table reads are always bare.
 
 ---
@@ -44,18 +49,23 @@ Audience: backend team + frontend. This is the data/RPC contract the frontend is
 Reads via PostgREST + one search RPC.
 
 ```
-supabase.from("cities").select()                    → [{ id, nameAr, nameEn, slug }]
-supabase.from("companies").select().eq("slug", s)   → { id, name, logoUrl, rating, tripsCount }
-supabase.rpc("search_trips", { from_slug, to_slug, travel_date, passengers })
-supabase.rpc("get_trip", { trip_id })
+supabase.from("cities").select()                    → [{ id, name_ar, name_en, slug }]
+supabase.from("companies").select().eq("slug", s)   → { id, name, logo_url, rating, tripsCount }
+supabase.rpc("search_trips", { p_from_slug, p_to_slug, p_travel_date, p_passengers })
+supabase.rpc("get_trip", { p_trip_id })
 ```
+
+**RPC argument names are `p_`-prefixed.** Every RPC parameter is declared `p_<name>` in the migrations, and PostgREST resolves an RPC by its argument names: calling `search_trips` with `{ from_slug, … }` or `get_trip` with `{ trip_id }` does not hit a differently-named parameter, it fails to find the function at all (404). The same holds for §3/§4 (`p_seats`, `p_lock_id`, `p_idempotency_key`, …).
+
+**PostgREST table reads return raw column names — snake_case.** The camelCase aliasing in this document happens inside `json_build_object` in the RPCs, and nowhere else. A `.from("cities").select()` therefore yields `name_ar` / `name_en`, not `nameAr` / `nameEn`. The frontend renames at the transport edge — `fetchCities` in `src/features/search/api.ts` maps the row to the camelCase shape `citySchema` expects, so the domain schema stays camelCase and unchanged.
+
 search_trips returns a bare jsonb array, not the §0 envelope and not a paginated wrapper: it is a read, results for one route+date are small, and the frontend derives its count line from the array length. get_trip returns the envelope because it has a real failure mode (NOT_FOUND). This asymmetry is deliberate.
 
-`search_trips` item shape (frontend renders exactly this — unchanged from before):
+`search_trips` item shape (frontend renders exactly this):
 ```json
 {
   "id": "uuid",
-  "company": { "id": "uuid", "name": "الأمانة", "logoUrl": "...", "rating": 4.6 },
+  "company": { "id": "uuid", "name": "الأمانة", "logoUrl": "..." | null, "rating": 4.6 | null },
   "fromCity": { "id": "...", "nameAr": "دمشق" },
   "toCity":   { "id": "...", "nameAr": "حلب" },
   "departureAt": "2026-07-10T08:30:00Z",
@@ -66,10 +76,13 @@ search_trips returns a bare jsonb array, not the §0 envelope and not a paginate
   "busType": "VIP"
 }
 ```
-- `travel_date` is the departure date in **local Syria time**; the RPC converts to a UTC window (`Asia/Damascus`).
+- **`company.logoUrl` and `company.rating` are NULLABLE.** `companies.logo_url` and `companies.rating` are nullable columns: a company that has not uploaded a logo, or that has no rating yet because nobody has rated it, is a perfectly valid approved company and its trips **must render**. Consumers must not assume either field is present — a parser that requires them rejects the whole array and takes down the entire result list over one incomplete company, not just that one card. Rendering rule: a missing logo falls back to a same-size placeholder (no layout shift); a missing rating omits the rating element entirely — never `0`, never a dash.
+- `get_trip` returns this same item shape plus `cancellationPolicy`, wrapped in the §0 envelope, and inherits the nullable `company.logoUrl` / `company.rating` above.
+- `p_travel_date` is the departure date in **local Syria time**; the RPC converts to a UTC window (`Asia/Damascus`).
+- `p_passengers` filters the list: a trip whose `availableSeats` is below it is dropped. The frontend sends the `passengers` URL param here.
 - Only `status = 'published'`, `departureAt > now()`, company `status = 'approved'` (checked at query time — suspension takes effect immediately).
 - `availableSeats` = capacity − active bookings − unexpired locks, computed in SQL (lateral counts).
-- Column aliasing to camelCase happens inside the RPC (`json_build_object`) so the wire shape matches zod schemas exactly.
+- Column aliasing to camelCase happens inside the RPC (`json_build_object`) so the wire shape matches zod schemas exactly. This applies to the RPCs only — see the PostgREST note above for table reads.
 
 ## 3. Seat Map & Locking ⚠️ (most critical part of the system)
 

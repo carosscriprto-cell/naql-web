@@ -13,11 +13,16 @@ export const citySchema = z.object({
 
 export const tripSearchItemSchema = z.object({
   id: z.string(),
+  // logoUrl / rating are nullable (docs/BACKEND_V1.md §2): companies.logo_url
+  // and companies.rating are nullable columns, so an approved company with no
+  // logo or no rating yet is valid. Requiring them here would fail the parse for
+  // the WHOLE array and blank the search page over one incomplete company.
+  // Nothing else loosens — ids, price, availableSeats and busType stay strict.
   company: z.object({
     id: z.string(),
     name: z.string(),
-    logoUrl: z.string(),
-    rating: z.number(),
+    logoUrl: z.string().nullable(),
+    rating: z.number().nullable(),
   }),
   fromCity: z.object({ id: z.string(), nameAr: z.string() }),
   toCity: z.object({ id: z.string(), nameAr: z.string() }),

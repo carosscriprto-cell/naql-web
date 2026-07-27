@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { filterAndSortTrips } from "../filter-trips";
-import { useSearchTrips } from "../hooks/use-search-trips";
+import { parsePassengers, useSearchTrips } from "../hooks/use-search-trips";
 import { useTripFilters } from "../hooks/use-trip-filters";
 import { SearchFiltersSheet } from "./search-filters-sheet";
 import { TripCard } from "./trip-card";
@@ -43,7 +43,7 @@ export function SearchResults({
     data: trips,
     isPending,
     isError,
-  } = useSearchTrips({ from, to, date });
+  } = useSearchTrips({ from, to, date, passengers: parsePassengers(passengers) });
 
   if (isPending) {
     return (

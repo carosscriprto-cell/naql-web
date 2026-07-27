@@ -10,8 +10,9 @@ export type City = {
 export type Company = {
   id: string;
   name: string;
-  logoUrl: string;
-  rating: number;
+  // Nullable columns in the DB (§2) — no logo uploaded / not rated yet.
+  logoUrl: string | null;
+  rating: number | null;
   tripsCount: number;
 };
 

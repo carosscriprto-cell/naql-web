@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useSearchTrips } from "../hooks/use-search-trips";
+import { parsePassengers, useSearchTrips } from "../hooks/use-search-trips";
 import {
   DEPARTURE_WINDOWS,
   useTripFilters,
@@ -61,11 +61,14 @@ export function SearchFilters() {
   const searchParams = useSearchParams();
   const { filters, activeCount, ...actions } = useTripFilters();
 
-  // Same query key as the results list — served from the cache.
+  // Same query key as the results list — served from the cache. `passengers`
+  // goes through the same parsePassengers() the list uses, or the keys diverge
+  // and the facets below describe a result set nobody is looking at.
   const { data: trips } = useSearchTrips({
     from: searchParams.get("from") ?? "",
     to: searchParams.get("to") ?? "",
     date: searchParams.get("date") ?? "",
+    passengers: parsePassengers(searchParams.get("passengers")),
   });
   const companies = [
     ...new Map(
