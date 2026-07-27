@@ -78,6 +78,11 @@ jobs:
             --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY \
             | tee -a "$GITHUB_ENV"
       - name: Run DB tests
+        env:
+          TEST_OPERATOR_EMAIL: operator.amana@naql.dev
+          TEST_OPERATOR_PASSWORD: Password123!
+          TEST_ADMIN_EMAIL: admin@naql.dev
+          TEST_ADMIN_PASSWORD: Password123!
         run: npm run db:test
       - name: Generated types are committed and fresh
         run: |
