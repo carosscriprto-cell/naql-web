@@ -438,7 +438,10 @@ export type Database = {
     }
     Functions: {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      get_seat_map: { Args: { p_trip_id: string }; Returns: Json }
       get_trip: { Args: { p_trip_id: string }; Returns: Json }
+      lock_seats: { Args: { p_seats: Json; p_trip_id: string }; Returns: Json }
+      release_lock: { Args: { p_lock_id: string }; Returns: Json }
       search_trips: {
         Args: {
           p_from_slug: string
