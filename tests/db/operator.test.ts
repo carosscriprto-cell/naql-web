@@ -31,19 +31,38 @@ const D = "000000ee-0000-4000-8000-0000d00c";
 const ROUTE = `${D}0001`; // حمص→طرطوس — not a seeded pair
 const BUS_A = `${D}0002`;
 const BUS_B = `${D}0003`;
-const TRIP_A1 = `${D}0010`; // الأمانة, published, +8d — manifest / check-in / summary
-const TRIP_A2 = `${D}0011`; // الأمانة, published, +9d — cancel_trip target
-const TRIP_B1 = `${D}0012`; // القدموس, published, +8d — cross-tenant target
-const TRIP_B2 = `${D}0013`; // القدموس, DRAFT — PostgREST select isolation
+const TRIP_A1 = `${D}0010`; // company A, published, +8d — manifest / check-in / summary
+const TRIP_A2 = `${D}0011`; // company A, published, +9d — cancel_trip target
+const TRIP_B1 = `${D}0012`; // company B, published, +8d — cross-tenant target
+const TRIP_B2 = `${D}0013`; // company B, DRAFT — PostgREST select isolation
 const BOOKING_A1 = `${D}0020`; // 2 seats, snapshot rate 0.10
 const BOOKING_A1B = `${D}0021`; // 1 seat,  snapshot rate 0.30
 const BOOKING_A2 = `${D}0022`; // on TRIP_A2, for cancel_trip
 const BOOKING_B1 = `${D}0023`; // on TRIP_B1, cross-tenant target
 
-// Seeded companies (supabase/seed.sql) — referenced, never modified.
-const AMANA = "000000a1-0000-4000-8000-000000000001";
-const KADMOUS = "000000a1-0000-4000-8000-000000000002";
-const AMANA_RATE = 0.25; // الأمانة's CURRENT rate — the wrong answer for commission
+// Operator A's company is NOT hardcoded: it is whatever company the account in
+// TEST_OPERATOR_EMAIL belongs to, read from that session's `company_id` claim —
+// the same value the RPCs themselves guard on (auth.jwt()->>'company_id',
+// BACKEND_V1 §5). Pinning it to a uuid meant the fixture only worked when
+// TEST_OPERATOR_EMAIL happened to be الأمانة: any other seeded operator signed
+// in as itself, then failed every case that reads A's data, because the trips
+// belonged to a company its session had no claim to. Resolved in beforeAll.
+let COMPANY_A: string;
+let COMPANY_B: string;
+/** COMPANY_A's CURRENT commission rate — the WRONG answer for a snapshot. */
+let COMPANY_A_RATE: number;
+
+/**
+ * The three operator accounts in supabase/seed.sql. Operator B is picked from
+ * this list as the first one whose company differs from A's, so the pair is
+ * always cross-tenant no matter which of them TEST_OPERATOR_EMAIL names.
+ */
+const SEEDED_OPERATORS = [
+  "operator.amana@naql.dev",
+  "operator.kadmous@naql.dev",
+  "operator.ahlia@naql.dev",
+];
+
 const HOMS = "000000c1-0000-4000-8000-000000000003";
 const TARTUS = "000000c1-0000-4000-8000-000000000006";
 const DEMO_PASSENGER = "000000db-0000-4000-8000-000000000001";
@@ -78,23 +97,45 @@ function required(name: string): string {
 }
 
 /**
- * Both operator accounts are seeded with the SAME password (supabase/seed.sql
- * documents `Password123!` for every seeded account, and ci.yml passes it as
- * TEST_OPERATOR_PASSWORD). Only operator A's email is in .env.test; operator B
- * is addressed by its fixed seeded address, exactly as ci.yml does.
+ * Every seeded operator account shares one password (supabase/seed.sql
+ * documents `Password123!` for all of them, and ci.yml passes it as
+ * TEST_OPERATOR_PASSWORD), so an email is enough to open any of their sessions.
+ *
+ * Returns the client AND the company its JWT claims, because that claim — not a
+ * uuid written into this file — is what every operator RPC authorises against.
  */
-async function operatorClient(email: string): Promise<SupabaseClient> {
+async function operatorClient(
+  email: string,
+): Promise<{ client: SupabaseClient; companyId: string }> {
   const client = publicClient();
-  const { error } = await client.auth.signInWithPassword({
+  const { data, error } = await client.auth.signInWithPassword({
     email,
     password: required("TEST_OPERATOR_PASSWORD"),
   });
   if (error) throw new Error(`operator sign-in failed for ${email}: ${error.message}`);
-  return client;
+
+  // Read company_id straight out of the access token: the custom access token
+  // hook puts it there (20260725202100_schema_rls_hook.sql) and the RPCs read
+  // it back with auth.jwt()->>'company_id'. Anything else would be testing a
+  // different value than the one under test.
+  const token = data.session?.access_token;
+  if (!token) throw new Error(`no session for ${email}`);
+  const claims = JSON.parse(
+    Buffer.from(token.split(".")[1], "base64url").toString("utf8"),
+  ) as { company_id?: string; user_role?: string };
+
+  if (claims.user_role !== "operator" || !claims.company_id) {
+    throw new Error(
+      `${email} is not a seeded OPERATOR account (user_role=${claims.user_role ?? "?"}, ` +
+        `company_id=${claims.company_id ?? "none"}). TEST_OPERATOR_EMAIL must name one of: ` +
+        SEEDED_OPERATORS.join(", "),
+    );
+  }
+  return { client, companyId: claims.company_id };
 }
 
-let opA: SupabaseClient; // الأمانة
-let opB: SupabaseClient; // القدموس
+let opA: SupabaseClient; // TEST_OPERATOR_EMAIL's company
+let opB: SupabaseClient; // any other seeded operator's company
 let summaryDate: string; // Damascus-local date of TRIP_A1
 
 /** Damascus-local date (YYYY-MM-DD) of a UTC instant. Syria is UTC+3, no DST. */
@@ -141,10 +182,39 @@ async function dropFixture() {
 beforeAll(async () => {
   await dropFixture(); // a previous crashed run may have left the block behind
 
-  [opA, opB] = await Promise.all([
-    operatorClient(required("TEST_OPERATOR_EMAIL")),
-    operatorClient("operator.kadmous@naql.dev"),
-  ]);
+  const a = await operatorClient(required("TEST_OPERATOR_EMAIL"));
+  opA = a.client;
+  COMPANY_A = a.companyId;
+
+  // Operator B = the first seeded operator that is NOT in A's company. Chosen
+  // by claim, not by address, so this stays cross-tenant whichever account
+  // TEST_OPERATOR_EMAIL names — including when it names this list's first entry.
+  let b: { client: SupabaseClient; companyId: string } | undefined;
+  for (const email of SEEDED_OPERATORS) {
+    const candidate = await operatorClient(email);
+    if (candidate.companyId !== COMPANY_A) {
+      b = candidate;
+      break;
+    }
+  }
+  if (!b) {
+    throw new Error(
+      "no seeded operator outside TEST_OPERATOR_EMAIL's company — the tenant-isolation gate " +
+        "(OPR-1 AC-3) cannot be proven with one company. Check supabase/seed.sql.",
+    );
+  }
+  opB = b.client;
+  COMPANY_B = b.companyId;
+
+  // A's CURRENT rate, read live rather than hardcoded: the summary assertion
+  // needs a value it can prove the RPC did NOT use.
+  const { data: companyA, error: rateErr } = await svc
+    .from("companies")
+    .select("commission_rate")
+    .eq("id", COMPANY_A)
+    .single();
+  if (rateErr) throw new Error(`reading COMPANY_A rate: ${rateErr.message}`);
+  COMPANY_A_RATE = Number(companyA.commission_rate);
 
   const depA1 = departureUtc(8);
   const depA2 = departureUtc(9);
@@ -166,14 +236,14 @@ beforeAll(async () => {
     svc.from("buses").insert([
       {
         id: BUS_A,
-        company_id: AMANA,
+        company_id: COMPANY_A,
         plate_number: "OPRSCRATCH-A",
         bus_type: "VIP",
         layout: { rows: 12, cols: 4, aisleAfterCol: 2 },
       },
       {
         id: BUS_B,
-        company_id: KADMOUS,
+        company_id: COMPANY_B,
         plate_number: "OPRSCRATCH-B",
         bus_type: "عادي",
         layout: { rows: 12, cols: 4, aisleAfterCol: 2 },
@@ -185,22 +255,22 @@ beforeAll(async () => {
     "trips",
     svc.from("trips").insert([
       {
-        id: TRIP_A1, company_id: AMANA, route_id: ROUTE, bus_id: BUS_A,
+        id: TRIP_A1, company_id: COMPANY_A, route_id: ROUTE, bus_id: BUS_A,
         departure_at: depA1.toISOString(), arrival_at: plus3h(depA1),
         price: 50000, status: "published",
       },
       {
-        id: TRIP_A2, company_id: AMANA, route_id: ROUTE, bus_id: BUS_A,
+        id: TRIP_A2, company_id: COMPANY_A, route_id: ROUTE, bus_id: BUS_A,
         departure_at: depA2.toISOString(), arrival_at: plus3h(depA2),
         price: 50000, status: "published",
       },
       {
-        id: TRIP_B1, company_id: KADMOUS, route_id: ROUTE, bus_id: BUS_B,
+        id: TRIP_B1, company_id: COMPANY_B, route_id: ROUTE, bus_id: BUS_B,
         departure_at: depA1.toISOString(), arrival_at: plus3h(depA1),
         price: 50000, status: "published",
       },
       {
-        id: TRIP_B2, company_id: KADMOUS, route_id: ROUTE, bus_id: BUS_B,
+        id: TRIP_B2, company_id: COMPANY_B, route_id: ROUTE, bus_id: BUS_B,
         departure_at: depA2.toISOString(), arrival_at: plus3h(depA2),
         price: 50000, status: "draft",
       },
@@ -208,7 +278,7 @@ beforeAll(async () => {
   );
 
   // Two bookings on TRIP_A1 with DELIBERATELY DIFFERENT snapshotted rates,
-  // neither equal to الأمانة's current 0.25. That is what makes the
+  // neither equal to company A's current rate. That is what makes the
   // operator_summary assertion able to tell "reads the snapshot" apart from
   // "reads the company" without mutating a single seeded row.
   await arrange(
@@ -532,8 +602,8 @@ describe("check_in", () => {
   });
 
   it("ANOTHER COMPANY's genuine ticket is rejected with the same NOT_FOUND", async () => {
-    const qr = await qrFor(PNR_A1, PHONE_A1); // a booking on الأمانة's trip
-    const env = await call(opB, "check_in", { p_qr_payload: qr }); // scanned by القدموس
+    const qr = await qrFor(PNR_A1, PHONE_A1); // a booking on company A's trip
+    const env = await call(opB, "check_in", { p_qr_payload: qr }); // scanned by company B
     expect(errorOf(env)).toMatchObject({
       code: "NOT_FOUND",
       details: { reason: "not_found" },
@@ -688,10 +758,10 @@ describe("operator_summary", () => {
     expect(data.revenue).toBe(100000);
 
     // THE ASSERTION. 100000 × 0.10 (snapshot) = 10000.
-    // 100000 × 0.25 (الأمانة's CURRENT rate) would be 25000 — proving the
+    // 100000 × COMPANY_A_RATE (its CURRENT rate) would differ — proving the
     // function reads bookings.commission_rate, without mutating any seeded row.
     expect(data.commission).toBe(10000);
-    expect(data.commission).not.toBe(Math.round(100000 * AMANA_RATE));
+    expect(data.commission).not.toBe(Math.round(100000 * COMPANY_A_RATE));
     expect(data.net).toBe(90000);
 
     // Cancelled bookings leave both the money and the occupancy.

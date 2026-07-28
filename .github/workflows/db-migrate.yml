@@ -15,11 +15,21 @@ on:
         default: dev
         type: choice
         options: [dev] # prod is added later, with an environment gate
+      action:
+        description: "migrate = apply pending | reset = DROP ALL DATA, replay every migration, re-seed"
+        required: true
+        default: migrate
+        type: choice
+        options: [migrate, reset]
+      confirm:
+        description: "reset only — type the project ref to confirm the wipe"
+        required: false
+        default: ""
 
 concurrency: db-migrate-${{ inputs.target }}
 
 jobs:
-  migrate:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,18 +37,34 @@ jobs:
         with:
           version: 2.109.1 # pin the same version the db job uses (ci.yml)
 
-      # The URL never appears on a command line or in an expression inside
-      # `run:` — it is passed through the environment and dereferenced by the
-      # shell, so it stays out of the process argument list.
-      - name: Guard — session pooler only
+      # Neither the URL nor any workflow input appears inside a `run:`
+      # expression — both are passed through the environment and dereferenced by
+      # the shell. For the secret that keeps it off the process argument list;
+      # for the inputs it closes a script-injection hole, since `${{ inputs.x }}`
+      # is pasted into the script verbatim before bash ever sees it.
+      - name: Guard — DEV only, session pooler only
         env:
           DB_URL: ${{ secrets.DEV_DB_URL }}
         run: |
           [[ -n "$DB_URL" ]] || { echo "::error::DEV_DB_URL secret is empty or unset"; exit 1; }
-          [[ "$DB_URL" == *":5432/postgres"* ]] || { echo "::error::not a session-pooler URL"; exit 1; }
-          [[ "$DB_URL" == *"gidodxojpvztrsihnqxj"* ]] || { echo "::error::wrong project ref"; exit 1; }
+          [[ "$DB_URL" == *"gidodxojpvztrsihnqxj"* ]] || { echo "::error::wrong project"; exit 1; }
+          [[ "$DB_URL" == *":5432/postgres"*      ]] || { echo "::error::session pooler required"; exit 1; }
 
-      - name: Pending migrations
+      # `db reset` DROPS EVERY TABLE. A choice dropdown is one mis-click away
+      # from wiping DEV, so reset additionally requires the ref typed by hand.
+      # `migrate` is unaffected.
+      - name: Guard — reset requires typed confirmation
+        if: inputs.action == 'reset'
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [[ "$CONFIRM" != "gidodxojpvztrsihnqxj" ]]; then
+            echo "::error::reset drops all data and re-seeds. Re-run with confirm=gidodxojpvztrsihnqxj"
+            exit 1
+          fi
+          echo "::warning::DESTRUCTIVE — resetting DEV: every table dropped, all migrations replayed, seed re-run."
+
+      - name: Before
         env:
           DB_URL: ${{ secrets.DEV_DB_URL }}
         run: supabase migration list --db-url "$DB_URL"
@@ -46,9 +72,15 @@ jobs:
       - name: Apply
         env:
           DB_URL: ${{ secrets.DEV_DB_URL }}
-        run: supabase migration up --db-url "$DB_URL"
+          ACTION: ${{ inputs.action }}
+        run: |
+          if [ "$ACTION" = "reset" ]; then
+            supabase db reset --db-url "$DB_URL"
+          else
+            supabase migration up --db-url "$DB_URL"
+          fi
 
-      - name: Confirm
+      - name: After
         env:
           DB_URL: ${{ secrets.DEV_DB_URL }}
         run: supabase migration list --db-url "$DB_URL"
