@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import {
   pooledAnonClient,
   publicClient,
@@ -143,6 +143,31 @@ describe("lock_seats concurrency (merge gate)", () => {
     expect(seat(await getSeatMap(), "12").status).toBe("available");
   });
 
+  // T-LOCK-5, third case — previously unasserted (docs/STATE_REPORT.md §7).
+  it("release_lock on an already-gone lock is ok (idempotent)", async () => {
+    const owner = await pooledAnonClient(10);
+    const { lockId } = okData(await lockSeats(owner, [{ seatNumber: "14", gender: "male" }]));
+
+    const first = (await owner.rpc("release_lock", { p_lock_id: lockId })).data as Envelope<null>;
+    expect(first.ok).toBe(true);
+
+    // Releasing the same lock again must NOT be FORBIDDEN or NOT_FOUND. The
+    // frontend fires a best-effort release on unload and again on the countdown
+    // hitting zero, so the second call is a normal event, not an error — and the
+    // caller is no longer the owner of anything, so a naive ownership check
+    // would answer FORBIDDEN here.
+    const second = (await owner.rpc("release_lock", { p_lock_id: lockId })).data as Envelope<null>;
+    expect(second.ok, "a repeated release must stay ok").toBe(true);
+
+    // A lock id that never existed is equally ok — same reasoning.
+    const never = (await owner.rpc("release_lock", {
+      p_lock_id: "000000ee-0000-4000-8000-00000000dead",
+    })).data as Envelope<null>;
+    expect(never.ok).toBe(true);
+
+    expect(seat(await getSeatMap(), "14").status).toBe("available");
+  });
+
   it("a gender declared in a lock is visible via get_seat_map from another session", async () => {
     await lockSeats(await pooledAnonClient(10), [{ seatNumber: "20", gender: "female" }]);
 
@@ -178,5 +203,144 @@ describe("lock_seats concurrency (merge gate)", () => {
       .eq("trip_id", TRIP)
       .eq("seat_number", "999");
     expect(rows ?? []).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// T-LOCK-3 (P0 [AUTO]) — lock_seats against an already-BOOKED seat.
+//
+// Until now nothing executed the booked-conflict branch of lock_seats
+// (20260726135700_seat_map_and_locking.sql §f, the SEAT_ALREADY_BOOKED return).
+// Every existing case in this file exercises the LOCKED branch below it, and
+// booking.test.ts hits SEAT_ALREADY_BOOKED from create_booking's partial unique
+// index — a different code path in a different function.
+//
+// Fixture: one booking + one active booking_passengers row on a scratch seat of
+// the same seeded trip, under a reserved uuid prefix, torn down in afterAll.
+// Seats 40/41 are used by nothing else in this file (the cases above use
+// 1, 5, 6, 7, 10, 12, 20), and seeded trip n=9 carries no bookings.
+//
+// A crashed run leaves a greppable orphan, hand-cleanable with:
+//   delete from bookings where id = '000000ee-0000-4000-8000-0000b00c0001';
+//   -- booking_passengers cascades
+// ===========================================================================
+const BOOKED_SEAT = "40";
+const FREE_SEAT = "41";
+const SCRATCH_BOOKING = "000000ee-0000-4000-8000-0000b00c0001";
+const SCRATCH_IDEMPOTENCY = "000000ee-0000-4000-8000-0000b00c0002";
+const DEMO_PASSENGER = "000000db-0000-4000-8000-000000000001"; // seeded auth.users row
+
+async function dropBookingFixture() {
+  // booking_passengers is ON DELETE CASCADE from bookings; deleted explicitly
+  // first so a partially-created fixture also cleans up.
+  await svc.from("booking_passengers").delete().eq("booking_id", SCRATCH_BOOKING);
+  await svc.from("bookings").delete().eq("id", SCRATCH_BOOKING);
+}
+
+describe("lock_seats vs a booked seat (T-LOCK-3)", () => {
+  beforeAll(async () => {
+    await dropBookingFixture(); // a previous crashed run may have left it behind
+
+    const booking = await svc.from("bookings").insert({
+      id: SCRATCH_BOOKING,
+      trip_id: TRIP,
+      user_id: DEMO_PASSENGER,
+      pnr: "SCRTCH",
+      status: "confirmed",
+      payment_method: "cash",
+      total_price: 100000,
+      commission_rate: 0.25,
+      idempotency_key: SCRATCH_IDEMPOTENCY,
+    });
+    if (booking.error) throw new Error(`arrange booking: ${booking.error.message}`);
+
+    // active = true is what the partial unique index and every availability
+    // count key on — a cancelled (active=false) row would free the seat.
+    const passenger = await svc.from("booking_passengers").insert({
+      booking_id: SCRATCH_BOOKING,
+      trip_id: TRIP,
+      seat_number: BOOKED_SEAT,
+      full_name: "راكب اختبار",
+      phone: "+963900000040",
+      gender: "male",
+      active: true,
+    });
+    if (passenger.error) throw new Error(`arrange passenger: ${passenger.error.message}`);
+  });
+
+  afterAll(dropBookingFixture); // runs even if the assertions failed
+
+  it("the seat really is booked on the public map", async () => {
+    // Guards the fixture itself: if this is not "booked", the two cases below
+    // would pass for the wrong reason (a free seat conflicting on nothing).
+    expect(seat(await getSeatMap(), BOOKED_SEAT).status).toBe("booked");
+  });
+
+  it("locking it → SEAT_ALREADY_BOOKED with details.seats = exactly that seat", async () => {
+    const res = await lockSeats(await pooledAnonClient(10), [
+      { seatNumber: BOOKED_SEAT, gender: "male" },
+    ]);
+
+    if (res.ok) throw new Error("expected SEAT_ALREADY_BOOKED");
+    // NOT SEAT_ALREADY_LOCKED — booked and locked are different states with
+    // different recovery UX, and the booked check runs first (§3).
+    expect(res.error.code).toBe("SEAT_ALREADY_BOOKED");
+    expect(res.error.details?.seats).toEqual([BOOKED_SEAT]);
+  });
+
+  // T-PAS4-8 — previously only half-covered (docs/STATE_REPORT.md §7): gender on
+  // locked and gender on booked were asserted in separate tests, and nothing
+  // asserted its ABSENCE on available. One call, all three statuses, because
+  // the frontend renders them from a single response and the gender key drives
+  // which icon each seat gets.
+  it("ONE get_seat_map shows all three statuses, gender only on locked+booked", async () => {
+    // seat 40 is booked by this describe's fixture (male); lock 41 as female so
+    // the two occupied states carry DIFFERENT genders and cannot be confused.
+    const res = await lockSeats(await pooledAnonClient(10), [
+      { seatNumber: FREE_SEAT, gender: "female" },
+    ]);
+    expect(res.ok, "arrange: locking the free seat should succeed").toBe(true);
+
+    const map = await getSeatMap();
+
+    const booked = seat(map, BOOKED_SEAT);
+    expect(booked.status).toBe("booked");
+    expect(booked.gender).toBe("male");
+
+    const locked = seat(map, FREE_SEAT);
+    expect(locked.status).toBe("locked");
+    expect(locked.gender).toBe("female");
+
+    // Available seats carry NO gender key at all — absent, not null. The
+    // frontend checks `"gender" in seat`, so a null would render a gender icon
+    // on an empty seat.
+    const available = map.seats.find((s) => s.status === "available")!;
+    expect(available, "the bus cannot be entirely occupied here").toBeDefined();
+    expect("gender" in available).toBe(false);
+
+    // All three states really are present in this one response.
+    expect(new Set(map.seats.map((s) => s.status))).toEqual(
+      new Set(["available", "locked", "booked"]),
+    );
+  });
+
+  it("a booked seat mixed with a free one locks NOTHING (all-or-nothing)", async () => {
+    const res = await lockSeats(await pooledAnonClient(11), [
+      { seatNumber: FREE_SEAT, gender: "female" },
+      { seatNumber: BOOKED_SEAT, gender: "male" },
+    ]);
+
+    if (res.ok) throw new Error("expected SEAT_ALREADY_BOOKED");
+    expect(res.error.code).toBe("SEAT_ALREADY_BOOKED");
+    // Only the booked seat is reported, not the whole request.
+    expect(res.error.details?.seats).toEqual([BOOKED_SEAT]);
+
+    // The free seat must NOT have been locked on the way to the failure.
+    const { data: rows } = await svc
+      .from("seat_lock_seats")
+      .select("seat_number")
+      .eq("trip_id", TRIP);
+    expect((rows ?? []).map((r) => r.seat_number)).not.toContain(FREE_SEAT);
+    expect(seat(await getSeatMap(), FREE_SEAT).status).toBe("available");
   });
 });

@@ -12,7 +12,9 @@
     "db:whoami": "supabase projects list && node -e \"console.log('LINKED=' + require('fs').readFileSync('supabase/.temp/project-ref','utf8').trim())\"",
     "db:reset": "dotenv -e .env.test -- cmd /c \"echo y| supabase db reset --linked\"",
     "db:types": "dotenv -e .env.test -- supabase gen types typescript --linked > src/types/database.ts",
-    "db:test": "vitest run -c vitest.db.config.ts"
+    "db:test": "vitest run -c vitest.db.config.ts",
+    "db:list": "node tools/db/supabase-db.mjs migration list",
+    "db:inspect": "node tools/db/supabase-db.mjs inspect"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
