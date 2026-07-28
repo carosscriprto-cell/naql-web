@@ -613,28 +613,78 @@ describe("create_booking — booking limits", () => {
 // PNR generation
 // ===========================================================================
 describe("PNR", () => {
-  it("200 generated PNRs: 6 chars, never 0 O 1 I, all unique", async () => {
-    const pnrs: string[] = [];
-    for (let batch = 0; batch < 10; batch++) {
-      const round = await Promise.all(
-        Array.from({ length: 20 }, async () => {
-          const { data, error } = await svc.rpc("generate_pnr");
-          expect(error, `generate_pnr raised: ${error?.message}`).toBeNull();
-          return data as string;
-        }),
-      );
-      pnrs.push(...round);
-    }
+  // T-PAS7-2. This used to call svc.rpc("generate_pnr") 200 times. B7
+  // (20260727170000_b7_grants_hardening.sql) revoked EXECUTE on that helper from
+  // service_role, so those calls now return 42501 — and that revoke is itself
+  // asserted by security.test.ts > "service_role cannot execute the internal
+  // helpers". The helper is therefore unreachable BY DESIGN, and re-granting it
+  // to make this test pass would break the grants audit instead. So the sample
+  // now comes from the only remaining producer of PNRs: create_booking.
+  //
+  // SAMPLE SIZE. Every PNR now costs a real lock + booking round trip, and
+  // create_booking enforces app_config.max_active_bookings_per_user — so PNRs
+  // are collected in rounds of that ceiling, deleting the rows between rounds to
+  // reset it. 24 keeps the suite fast while still making a generator that leaked
+  // 0/O/1/I essentially impossible to miss: 24 × 6 = 144 characters, so the odds
+  // of drawing none of the four excluded glyphs are (32/36)^144 ≈ 5e-8.
+  //
+  // Uniqueness over 24 draws is weak evidence on its own (32^6 ≈ 1.07e9), and it
+  // is no longer the real guarantee: bookings.pnr is UNIQUE and create_booking
+  // retries on collision, so a duplicate cannot reach the table at all. The
+  // assertion stays because a generator returning a CONSTANT would pass every
+  // other check here.
+  const SAMPLE = 24;
 
-    expect(pnrs).toHaveLength(200);
-    for (const pnr of pnrs) {
-      expect(pnr).toHaveLength(6);
-      expect(pnr).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
-      expect(pnr).not.toMatch(/[0O1I]/);
-    }
-    // 32^6 ≈ 1.07e9 — a collision in 200 draws would mean the generator is broken.
-    expect(new Set(pnrs).size).toBe(200);
-  });
+  async function configInt(key: string): Promise<number> {
+    const { data, error } = await svc
+      .from("app_config")
+      .select("value")
+      .eq("key", key)
+      .single();
+    expect(error, `app_config ${key}: ${error?.message}`).toBeNull();
+    return Number(data!.value);
+  }
+
+  it(
+    `${SAMPLE} PNRs minted through create_booking: 6 chars, never 0 O 1 I, all unique`,
+    async () => {
+      const client = await pooledAnonClient(37);
+      const perRound = await configInt("max_active_bookings_per_user");
+      const pnrs: string[] = [];
+
+      while (pnrs.length < SAMPLE) {
+        const n = Math.min(perRound, SAMPLE - pnrs.length);
+
+        // One booking per PNR, one seat each, distinct seats within the round.
+        // passenger() mints a fresh phone every call, so the per-phone ceiling
+        // cannot fire before the per-user one.
+        const round = await Promise.all(
+          Array.from({ length: n }, (_, i) =>
+            book(client, [passenger(String(i + 1), "male")]),
+          ),
+        );
+
+        for (const res of round) {
+          expect(res.ok, `booking failed: ${JSON.stringify(res)}`).toBe(true);
+          pnrs.push(okData(res).pnr);
+        }
+
+        // Drop the rows so the next round starts under the ceiling again with
+        // every seat free. afterEach wipes too; this is the intra-test reset.
+        await wipe();
+      }
+
+      expect(pnrs).toHaveLength(SAMPLE);
+      for (const pnr of pnrs) {
+        expect(pnr).toHaveLength(6);
+        expect(pnr).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+        expect(pnr).not.toMatch(/[0O1I]/);
+      }
+      expect(new Set(pnrs).size).toBe(SAMPLE);
+    },
+    // Real bookings over a hosted database — well past the 30s file default.
+    90_000,
+  );
 });
 
 // ===========================================================================

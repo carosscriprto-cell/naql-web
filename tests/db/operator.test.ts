@@ -348,10 +348,30 @@ describe("operator RPCs — role guard", () => {
     ["operator_summary", { p_from_date: "2026-01-01", p_to_date: "2026-12-31" }],
   ];
 
-  it("with NO session every one returns UNAUTHORIZED — and changes nothing", async () => {
+  // A RAW ANON KEY IS REJECTED AT THE GRANT, NOT BY THE FUNCTION BODY.
+  //
+  // This case used to expect the UNAUTHORIZED envelope. That expectation
+  // predates B7 (20260727170000_b7_grants_hardening.sql), which grants every
+  // operator RPC to `authenticated` ONLY and revokes anon. Postgres now refuses
+  // the call before the function runs, so PostgREST surfaces 42501
+  // (insufficient_privilege) as a transport error and there is no envelope at
+  // all — the `auth.uid() is null → UNAUTHORIZED` branch inside each function is
+  // simply unreachable for anon.
+  //
+  // This is the STRONGER guarantee, not a regression: an envelope means the body
+  // executed and chose to say no, while 42501 means the body never ran. Nothing
+  // inside the function — not a typo'd role check, not a future edit that
+  // reorders the guards — can leak anything, because control never reaches it.
+  // security.test.ts asserts the same surface from the grant side; this asserts
+  // that a client actually hits it.
+  it("with NO session every one is refused at the GRANT (42501) — the body never runs", async () => {
     for (const [fn, args] of CALLS) {
-      const env = await call(publicClient(), fn, args);
-      expect(errorOf(env).code, `${fn} with no session`).toBe("UNAUTHORIZED");
+      const { data, error } = await publicClient().rpc(fn, args);
+
+      expect(error, `${fn} with no session should have been refused`).not.toBeNull();
+      expect(error!.code, `${fn} with no session: ${error!.message}`).toBe("42501");
+      // No envelope came back — that is the point of failing at the grant.
+      expect(data, `${fn} returned a body to an ungranted caller`).toBeNull();
     }
     // The destructive ones in that list must not have fired.
     const { data: trip } = await svc.from("trips").select("status,price").eq("id", TRIP_A1).single();

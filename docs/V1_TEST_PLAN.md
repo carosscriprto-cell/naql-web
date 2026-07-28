@@ -105,7 +105,7 @@
 | ID | P | Type | Case | Expected |
 |---|---|---|---|---|
 | T-PAS7-1 | P0 | MAN | Confirmation page | PNR prominent + copy works, QR renders, trip summary, passengers table (seat/name/**gender**/phone), total, notice "ادفع في المكتب قبل الانطلاق بـ 30 دقيقة" |
-| T-PAS7-2 | P0 | AUTO | PNR format ×200 generated | 6 chars, never contains 0/O/1/I, unique |
+| T-PAS7-2 | P0 | AUTO | PNR format ×24, each minted through a real `create_booking` | 6 chars, never contains 0/O/1/I, unique. **Sample is 24, not 200, and no longer calls `generate_pnr()` directly:** B7 (`20260727170000_b7_grants_hardening.sql`) revoked EXECUTE on that helper from every role including `service_role`, and T-SEC-1 asserts that revoke — so the helper is unreachable by design and `create_booking` is the only remaining producer. Each PNR therefore costs a real lock + booking, collected in rounds of `max_active_bookings_per_user`. 24 × 6 = 144 characters still leaves a generator that leaks `0/O/1/I` only ~5e-8 chance of escaping; uniqueness is really guaranteed by the UNIQUE index on `bookings.pnr` plus `create_booking`'s retry-on-collision, and is asserted here only to catch a constant-returning generator. |
 | T-PAS7-3 | P1 | MAN | Browser back from confirmation | Does NOT return to checkout (router.replace) |
 | T-PAS7-4 | P1 | MAN | Open /booking/confirmation with empty store | Redirect home |
 | T-PAS7-5 | P0 | MAN×2 | After booking, device B opens same trip's map | Seats booked with correct genders within one refresh cycle |

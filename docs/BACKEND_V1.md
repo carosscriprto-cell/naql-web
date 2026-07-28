@@ -170,6 +170,8 @@ supabase.rpc("cancel_booking", { id })           // until 2h before departure, e
 
 - **Tenant isolation is RLS, not query discipline:** every operator-visible table has a policy `company_id = (auth.jwt()->>'company_id')::uuid`. Operator A literally cannot read operator B's rows. Integration test required anyway (OPR-1 AC-3).
 
+**Operator RPCs are `authenticated`-only at the GRANT level, so `UNAUTHORIZED` is unreachable for anon.** Every function in this section is `GRANT EXECUTE … TO authenticated` with `anon` revoked (`20260727170000_b7_grants_hardening.sql`). A caller holding only the anon key with no session is therefore refused by Postgres *before the function body runs*: PostgREST returns SQLSTATE **42501** (`insufficient_privilege`) as a transport error, **not** a §0 envelope. The `auth.uid() is null → UNAUTHORIZED` branch inside each function still exists, but only a caller who is already `authenticated` could reach it — which by definition has a `uid`, so in practice it is dead code kept as defence in depth. This is deliberate and is the stronger guarantee: an envelope would mean the body ran and chose to refuse, whereas 42501 means it never ran at all. Anonymous **passengers** are a different case — `signInAnonymously()` yields the `authenticated` role, so they pass the grant, reach the body, and correctly receive the `FORBIDDEN` envelope on the `user_role` check.
+
 ```
 supabase.from("trips")…                                  // list/filter own trips (RLS-scoped)
 supabase.rpc("create_trip" | "update_trip")              // publish → searchable immediately
