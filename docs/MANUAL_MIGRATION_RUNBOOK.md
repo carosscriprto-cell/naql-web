@@ -171,6 +171,113 @@ Files 1–4 are re-runnable (`create or replace`, `drop … if exists`). File 5 
    drop function if exists public.bump_seat_map_version();
    ```
 
+## Step 6 — `20260729141959_buses_constraints.sql` (B8)
+
+Independent of Steps 1–5: it adds two CHECK constraints and creates nothing, so it can be applied on
+its own at any time. **It is the only step with a mandatory pre-flight query.**
+
+1. Open `supabase/migrations/20260729141959_buses_constraints.sql`.
+2. **Run the PRE-FLIGHT SELECT from the header comment FIRST** — it is commented out precisely so the
+   paste cannot run it by accident. It must return **zero rows**. Every row it returns is a bus the
+   constraint would reject; the `ALTER` would fail with `23514` and change nothing, so fix the data
+   before continuing.
+3. **Copy the ENTIRE file** — header comment through the final `comment on constraint`. Both
+   constraints are `drop … if exists` then `add`, so the file is safe to paste twice.
+4. Record the version:
+   ```sql
+   insert into supabase_migrations.schema_migrations (version) values ('20260729141959');
+   ```
+5. Verify — both constraints present AND actually enforcing:
+   ```sql
+   select
+     (select count(*) from pg_constraint
+       where conrelid = 'public.buses'::regclass
+         and conname in ('buses_bus_type_check','buses_layout_shape_check')
+         and convalidated)                                    as constraints_valid,
+     (select count(*) from public.buses)                      as buses_total,
+     (select count(*) from public.buses
+       where bus_type in ('عادي','VIP'))                      as buses_with_valid_type;
+   ```
+   **Expect `constraints_valid = 2`, and `buses_total = buses_with_valid_type`.** `convalidated`
+   matters: a constraint added `NOT VALID` would show up in `pg_constraint` while enforcing nothing
+   on existing rows.
+6. Most likely error: **`23514 check constraint "buses_layout_shape_check" is violated by some row`**
+   — you skipped step 2. Nothing was applied; run the pre-flight, fix the offending bus, re-paste.
+   Second most likely: **`42P16 cannot ALTER TABLE because it has pending trigger events`** if a long
+   transaction is open in another SQL editor tab — close it and retry.
+
+**Regression check after this one** (per EXECUTION_MAP §B8):
+```bash
+npx vitest run -c vitest.db.config.ts tests/db/catalog.test.ts
+```
+
+## Step 7 — `20260729161545_admin_rpcs.sql` (B9)
+
+Independent of Steps 1–6: it creates five new RPCs plus one internal helper and alters no table, so
+it can be applied on its own at any time. Every function is `create or replace` with its own
+`revoke`/`grant` pair, so the file is safe to paste twice.
+
+It is the first migration to add **admin** RPCs, and the whole point of them is that only an admin may
+call them — so the grant check in step 5 is not optional bookkeeping, it is the test
+(`V1_TEST_PLAN` T-ADM-SEC).
+
+1. Open `supabase/migrations/20260729161545_admin_rpcs.sql`.
+2. **Copy the ENTIRE file** — header comment through the final line,
+   `grant  execute on function public.delete_route(uuid) to authenticated;`. Each of the five public
+   functions is followed by its own `revoke`/`grant` pair; a truncated paste leaves the later ones
+   **ungranted *and* unrevoked**, i.e. still holding Postgres's default `PUBLIC EXECUTE` — which makes
+   them anon-callable and fails `tests/db/security.test.ts`.
+3. Record the version:
+   ```sql
+   insert into supabase_migrations.schema_migrations (version) values ('20260729161545');
+   ```
+4. Verify — all six present, none reachable by `anon`, and the five public ones reachable by
+   `authenticated`:
+   ```sql
+   select
+     count(*) filter (where p.proname in (
+       'admin_company_json','set_company_status','set_commission_rate',
+       'commissions_by_month','delete_city','delete_route'))                    as functions_present,
+     count(*) filter (where has_function_privilege('anon', p.oid, 'EXECUTE'))    as anon_callable,
+     count(*) filter (where has_function_privilege('authenticated', p.oid, 'EXECUTE')) as authenticated_callable
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in (
+       'admin_company_json','set_company_status','set_commission_rate',
+       'commissions_by_month','delete_city','delete_route');
+   ```
+   **Expect `functions_present = 6`, `anon_callable = 0`, `authenticated_callable = 5`.**
+   Five, not six: `admin_company_json` is an internal helper and is revoked from `authenticated` too.
+   Any `anon_callable > 0` means a `revoke` line was cut off — re-run the whole file.
+5. Verify the envelope actually comes back, without changing a single row. The SQL editor has no
+   `auth.uid()`, so this returns the `UNAUTHORIZED` envelope — which is the proof that the function
+   exists, is reachable, and answers in `{ ok, error }` rather than raising:
+   ```sql
+   select public.set_commission_rate('00000000-0000-4000-8000-000000000000'::uuid, 0.19) as envelope;
+   ```
+   **Expect `{"ok": false, "error": {"code": "UNAUTHORIZED", ...}}`.** A `42883 function does not
+   exist` here means the paste did not take. (`0.19` is out of range on purpose: the guard order puts
+   the auth check first, so a response mentioning `VALIDATION_ERROR` instead would mean the role guard
+   is *below* the range check — a real bug, not a paste problem.)
+6. Most likely error: **none at paste time, then `PGRST202` from the tests** — PostgREST caches the
+   function list and will answer "function not found" for all five until told otherwise. Fixed by the
+   `notify pgrst, 'reload schema'` in the post-run checks below, not by re-running this file.
+   Second most likely: **`42704 type "company_status" does not exist`**, which means
+   `20260725141239_init_config_and_enums.sql` is not applied — stop and check `npm run db:list`,
+   because the pending set is then not what this runbook assumes.
+
+**Regression check after this one** (per EXECUTION_MAP §B9):
+```bash
+npx vitest run -c vitest.db.config.ts tests/db/admin.test.ts
+```
+That suite temporarily changes the commission rate of `TEST_OPERATOR_EMAIL`'s company and restores it
+in `afterAll`. If a run is killed mid-way, put it back by hand — the value is whatever
+`supabase/seed.sql` gives that company (0.250 / 0.300 / 0.200 for الأمانة / القدموس / الأهلية):
+```sql
+select id, name, commission_rate, status from public.companies order by name;
+```
+
 ---
 
 ## Post-run checks

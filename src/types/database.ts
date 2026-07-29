@@ -484,6 +484,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_company_json: { Args: { p_company_id: string }; Returns: Json }
       booking_ticket: { Args: { p_booking_id: string }; Returns: Json }
       cancel_booking: { Args: { p_booking_id: string }; Returns: Json }
       cancel_trip: { Args: { p_trip_id: string }; Returns: Json }
@@ -493,6 +494,7 @@ export type Database = {
         Returns: Json
       }
       check_in_by_pnr: { Args: { p_pnr: string }; Returns: Json }
+      commissions_by_month: { Args: { p_month: string }; Returns: Json }
       create_booking: {
         Args: {
           p_idempotency_key: string
@@ -517,6 +519,8 @@ export type Database = {
         Returns: Json
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      delete_city: { Args: { p_city_id: string }; Returns: Json }
+      delete_route: { Args: { p_route_id: string }; Returns: Json }
       generate_pnr: { Args: never; Returns: string }
       get_booking: { Args: { p_id: string }; Returns: Json }
       get_manifest: { Args: { p_trip_id: string }; Returns: Json }
@@ -543,6 +547,14 @@ export type Database = {
           p_to_slug: string
           p_travel_date: string
         }
+        Returns: Json
+      }
+      set_commission_rate: {
+        Args: { p_company_id: string; p_rate: number }
+        Returns: Json
+      }
+      set_company_status: {
+        Args: { p_company_id: string; p_status: string }
         Returns: Json
       }
       update_bus: {
