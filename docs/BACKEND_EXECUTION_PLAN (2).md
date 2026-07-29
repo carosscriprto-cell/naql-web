@@ -30,7 +30,18 @@ Principles:
 - **Critical logic in the DB (RPC), never in the client, never in Edge Functions.** Atomicity lives where the data lives.
 - No Redis. Postgres does locks, idempotency, and rate limiting.
 - Expected domain errors are **returned** in the envelope, never raised. Domain errors are HTTP 200 payloads — the frontend never branches on a status code.
-- **Never write SQL in the Supabase dashboard.** A change that isn't a migration file does not exist.
+- **Every schema change exists as a file in `supabase/migrations/`.** The invariant is the FILE, not the
+  transport. A change that isn't a migration file does not exist.
+  - **PERMITTED:** pasting the *verbatim* contents of a committed migration file into the dashboard SQL
+    editor, in version order, each followed by recording its version in
+    `supabase_migrations.schema_migrations`. Where outbound TCP/5432 is blackholed the CLI cannot reach
+    hosted DEV at all, and this is the supported fallback — see `docs/MANUAL_MIGRATION_RUNBOOK.md`.
+  - **STILL FORBIDDEN:** ad-hoc SQL authored in the editor that exists in no migration file; editing an
+    already-applied migration; any DDL that CI's from-zero rebuild would not reproduce.
+  - **Why the invariant matters:** PROD is built by replaying the files onto an empty project, CI rebuilds
+    from zero and runs the suite against *that*, and `db reset` silently erases anything that is not a
+    file. Hand-typed DDL survives until the next reset and then vanishes — usually discovered as a test
+    that passes on DEV and fails in CI.
 
 ## 1. Where the database actually runs
 

@@ -1,86 +1,86 @@
-name: DB migrate (manual)
+# name: DB migrate (manual)
 
-# Applies pending migrations to a hosted project from a runner, because the
-# session pooler (port 5432) is unreachable from at least one dev machine:
-# outbound 5432 completes the TCP handshake and then blackholes the payload,
-# while 6543 answers normally. GitHub runners have no such filter. Session mode
-# is required for DDL, so 6543 is not an option — hence the guard below.
+# # Applies pending migrations to a hosted project from a runner, because the
+# # session pooler (port 5432) is unreachable from at least one dev machine:
+# # outbound 5432 completes the TCP handshake and then blackholes the payload,
+# # while 6543 answers normally. GitHub runners have no such filter. Session mode
+# # is required for DDL, so 6543 is not an option — hence the guard below.
 
-on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: "Target project"
-        required: true
-        default: dev
-        type: choice
-        options: [dev] # prod is added later, with an environment gate
-      action:
-        description: "migrate = apply pending | reset = DROP ALL DATA, replay every migration, re-seed"
-        required: true
-        default: migrate
-        type: choice
-        options: [migrate, reset]
-      confirm:
-        description: "reset only — type the project ref to confirm the wipe"
-        required: false
-        default: ""
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       target:
+#         description: "Target project"
+#         required: true
+#         default: dev
+#         type: choice
+#         options: [dev] # prod is added later, with an environment gate
+#       action:
+#         description: "migrate = apply pending | reset = DROP ALL DATA, replay every migration, re-seed"
+#         required: true
+#         default: migrate
+#         type: choice
+#         options: [migrate, reset]
+#       confirm:
+#         description: "reset only — type the project ref to confirm the wipe"
+#         required: false
+#         default: ""
 
-concurrency: db-migrate-${{ inputs.target }}
+# concurrency: db-migrate-${{ inputs.target }}
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 2.109.1 # pin the same version the db job uses (ci.yml)
+# jobs:
+#   run:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: supabase/setup-cli@v1
+#         with:
+#           version: 2.109.1 # pin the same version the db job uses (ci.yml)
 
-      # Neither the URL nor any workflow input appears inside a `run:`
-      # expression — both are passed through the environment and dereferenced by
-      # the shell. For the secret that keeps it off the process argument list;
-      # for the inputs it closes a script-injection hole, since `${{ inputs.x }}`
-      # is pasted into the script verbatim before bash ever sees it.
-      - name: Guard — DEV only, session pooler only
-        env:
-          DB_URL: ${{ secrets.DEV_DB_URL }}
-        run: |
-          [[ -n "$DB_URL" ]] || { echo "::error::DEV_DB_URL secret is empty or unset"; exit 1; }
-          [[ "$DB_URL" == *"gidodxojpvztrsihnqxj"* ]] || { echo "::error::wrong project"; exit 1; }
-          [[ "$DB_URL" == *":5432/postgres"*      ]] || { echo "::error::session pooler required"; exit 1; }
+#       # Neither the URL nor any workflow input appears inside a `run:`
+#       # expression — both are passed through the environment and dereferenced by
+#       # the shell. For the secret that keeps it off the process argument list;
+#       # for the inputs it closes a script-injection hole, since `${{ inputs.x }}`
+#       # is pasted into the script verbatim before bash ever sees it.
+#       - name: Guard — DEV only, session pooler only
+#         env:
+#           DB_URL: ${{ secrets.DEV_DB_URL }}
+#         run: |
+#           [[ -n "$DB_URL" ]] || { echo "::error::DEV_DB_URL secret is empty or unset"; exit 1; }
+#           [[ "$DB_URL" == *"gidodxojpvztrsihnqxj"* ]] || { echo "::error::wrong project"; exit 1; }
+#           [[ "$DB_URL" == *":5432/postgres"*      ]] || { echo "::error::session pooler required"; exit 1; }
 
-      # `db reset` DROPS EVERY TABLE. A choice dropdown is one mis-click away
-      # from wiping DEV, so reset additionally requires the ref typed by hand.
-      # `migrate` is unaffected.
-      - name: Guard — reset requires typed confirmation
-        if: inputs.action == 'reset'
-        env:
-          CONFIRM: ${{ inputs.confirm }}
-        run: |
-          if [[ "$CONFIRM" != "gidodxojpvztrsihnqxj" ]]; then
-            echo "::error::reset drops all data and re-seeds. Re-run with confirm=gidodxojpvztrsihnqxj"
-            exit 1
-          fi
-          echo "::warning::DESTRUCTIVE — resetting DEV: every table dropped, all migrations replayed, seed re-run."
+#       # `db reset` DROPS EVERY TABLE. A choice dropdown is one mis-click away
+#       # from wiping DEV, so reset additionally requires the ref typed by hand.
+#       # `migrate` is unaffected.
+#       - name: Guard — reset requires typed confirmation
+#         if: inputs.action == 'reset'
+#         env:
+#           CONFIRM: ${{ inputs.confirm }}
+#         run: |
+#           if [[ "$CONFIRM" != "gidodxojpvztrsihnqxj" ]]; then
+#             echo "::error::reset drops all data and re-seeds. Re-run with confirm=gidodxojpvztrsihnqxj"
+#             exit 1
+#           fi
+#           echo "::warning::DESTRUCTIVE — resetting DEV: every table dropped, all migrations replayed, seed re-run."
 
-      - name: Before
-        env:
-          DB_URL: ${{ secrets.DEV_DB_URL }}
-        run: supabase migration list --db-url "$DB_URL"
+#       - name: Before
+#         env:
+#           DB_URL: ${{ secrets.DEV_DB_URL }}
+#         run: supabase migration list --db-url "$DB_URL"
 
-      - name: Apply
-        env:
-          DB_URL: ${{ secrets.DEV_DB_URL }}
-          ACTION: ${{ inputs.action }}
-        run: |
-          if [ "$ACTION" = "reset" ]; then
-            supabase db reset --db-url "$DB_URL"
-          else
-            supabase migration up --db-url "$DB_URL"
-          fi
+#       - name: Apply
+#         env:
+#           DB_URL: ${{ secrets.DEV_DB_URL }}
+#           ACTION: ${{ inputs.action }}
+#         run: |
+#           if [ "$ACTION" = "reset" ]; then
+#             supabase db reset --db-url "$DB_URL"
+#           else
+#             supabase migration up --db-url "$DB_URL"
+#           fi
 
-      - name: After
-        env:
-          DB_URL: ${{ secrets.DEV_DB_URL }}
-        run: supabase migration list --db-url "$DB_URL"
+#       - name: After
+#         env:
+#           DB_URL: ${{ secrets.DEV_DB_URL }}
+#         run: supabase migration list --db-url "$DB_URL"

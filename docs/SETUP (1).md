@@ -264,6 +264,34 @@ Then, in the dashboard for the DEV project — **`config.toml` does not apply to
 
 Skipping the first row makes every lock test fail with `UNAUTHORIZED`.
 
+### Manual application (no 5432)
+
+The Supabase CLI reaches a hosted project over the **session pooler on port 5432** — transaction mode
+(6543) cannot carry DDL. Some ISPs blackhole outbound 5432: the TCP handshake completes (so
+`Test-NetConnection` reports `TcpTestSucceeded: True` and misleads you) and then every payload byte is
+dropped. Diagnose by sending an 8-byte Postgres `SSLRequest` to the same peer IP on both ports — 6543
+replies `S` in milliseconds, 5432 times out. When that is the case, `db:reset`, `migration up` and
+`migration list` all fail with `PgClient: Failed to connect`, and migrations are applied by hand:
+
+1. Open the migration file in the repo and copy it **in full** — header comment through the trailing
+   `GRANT`/`REVOKE` lines. A partial paste is the main hazard: the body succeeds and the grants silently
+   do not, leaving `PUBLIC` with the default `EXECUTE`.
+2. Paste into the dashboard SQL editor and run it. Nothing is retyped or edited — if it needs changing,
+   it needs a new migration file.
+3. Immediately record the version, or the CLI and CI will disagree about what is applied:
+   ```sql
+   insert into supabase_migrations.schema_migrations (version) values ('<version>');
+   ```
+4. Repeat **in ascending version order**. Order matters where a migration drops something an earlier one
+   created — out of order, the drop silently no-ops and the object survives as drift.
+5. Reload the API schema cache once at the end: `notify pgrst, 'reload schema';` — otherwise PostgREST
+   keeps answering `PGRST202` for functions that now exist.
+
+`npm run db:list` still works over the transaction pooler (6543) because it only reads
+`supabase_migrations.schema_migrations` — use it to confirm the result.
+
+Step-by-step for the currently pending set: `docs/MANUAL_MIGRATION_RUNBOOK.md`.
+
 ### Project roles
 
 | Project | Role | `db reset` |
@@ -275,7 +303,15 @@ Skipping the first row makes every lock test fail with `UNAUTHORIZED`.
 ### Rules
 
 - Every schema change is a migration: `supabase migration new <name>`. Never edit an applied one.
-- **Never write SQL in the dashboard.** A change that isn't a migration file does not exist.
+- **Every schema change exists as a file in `supabase/migrations/`** — the invariant is the FILE, not the
+  transport. A change that isn't a migration file does not exist.
+  - **PERMITTED:** pasting the *verbatim* contents of a committed migration file into the dashboard SQL
+    editor, in version order, each followed by recording its version in
+    `supabase_migrations.schema_migrations` (see "Manual application" below).
+  - **STILL FORBIDDEN:** ad-hoc SQL authored in the editor that exists in no migration file; editing an
+    already-applied migration; any DDL that CI's from-zero rebuild would not reproduce.
+  - **Why:** PROD is built by replaying the files onto an empty project, CI rebuilds from zero and runs
+    the suite against that, and `db reset` silently erases anything that is not a file.
 - After any schema change run `db:types` and commit — the compiler then finds every stale consumer.
 - Concurrency suites (B3/B4) are authoritative **in CI**, which runs a real local stack. A green run
   against hosted DEV is supporting evidence, not the gate.
