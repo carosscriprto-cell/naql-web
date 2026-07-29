@@ -395,6 +395,32 @@ export type Database = {
           },
         ]
       }
+      trip_seat_map_version: {
+        Row: {
+          revision: number
+          trip_id: string
+          updated_at: string
+        }
+        Insert: {
+          revision?: number
+          trip_id: string
+          updated_at?: string
+        }
+        Update: {
+          revision?: number
+          trip_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_seat_map_version_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: true
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trips: {
         Row: {
           arrival_at: string
@@ -460,6 +486,13 @@ export type Database = {
     Functions: {
       booking_ticket: { Args: { p_booking_id: string }; Returns: Json }
       cancel_booking: { Args: { p_booking_id: string }; Returns: Json }
+      cancel_trip: { Args: { p_trip_id: string }; Returns: Json }
+      check_in: { Args: { p_qr_payload: string }; Returns: Json }
+      check_in_booking: {
+        Args: { p_booking_id: string; p_company_id: string }
+        Returns: Json
+      }
+      check_in_by_pnr: { Args: { p_pnr: string }; Returns: Json }
       create_booking: {
         Args: {
           p_idempotency_key: string
@@ -469,9 +502,24 @@ export type Database = {
         }
         Returns: Json
       }
+      create_bus: {
+        Args: { p_bus_type: string; p_layout: Json; p_plate_number: string }
+        Returns: Json
+      }
+      create_trip: {
+        Args: {
+          p_arrival_at: string
+          p_bus_id: string
+          p_departure_at: string
+          p_price: number
+          p_route_id: string
+        }
+        Returns: Json
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       generate_pnr: { Args: never; Returns: string }
       get_booking: { Args: { p_id: string }; Returns: Json }
+      get_manifest: { Args: { p_trip_id: string }; Returns: Json }
       get_seat_map: { Args: { p_trip_id: string }; Returns: Json }
       get_trip: { Args: { p_trip_id: string }; Returns: Json }
       lock_seats: { Args: { p_seats: Json; p_trip_id: string }; Returns: Json }
@@ -479,14 +527,40 @@ export type Database = {
         Args: { p_phone: string; p_pnr: string }
         Returns: Json
       }
+      operator_cancel_booking: { Args: { p_booking_id: string }; Returns: Json }
+      operator_summary: {
+        Args: { p_from_date: string; p_to_date: string }
+        Returns: Json
+      }
+      operator_trip_json: { Args: { p_trip_id: string }; Returns: Json }
       qr_hmac_secret: { Args: never; Returns: string }
       release_lock: { Args: { p_lock_id: string }; Returns: Json }
+      role_executable_functions: { Args: { p_role: string }; Returns: string[] }
       search_trips: {
         Args: {
           p_from_slug: string
           p_passengers: number
           p_to_slug: string
           p_travel_date: string
+        }
+        Returns: Json
+      }
+      update_bus: {
+        Args: {
+          p_bus_id: string
+          p_bus_type?: string
+          p_layout?: Json
+          p_plate_number?: string
+        }
+        Returns: Json
+      }
+      update_trip: {
+        Args: {
+          p_arrival_at?: string
+          p_departure_at?: string
+          p_price?: number
+          p_status?: string
+          p_trip_id: string
         }
         Returns: Json
       }
