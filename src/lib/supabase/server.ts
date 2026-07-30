@@ -19,10 +19,9 @@ import { supabaseCredentials } from "./credentials";
  * this function is too.
  *
  * NOTE: `setAll` is a no-op from Server Components (cookies are read-only once
- * rendering starts). Until a `middleware.ts` refreshes the session on each
- * request, a session whose access token expires mid-visit will not be renewed
- * server-side. That middleware belongs to Phase D, before the first
- * operator-authenticated route ships.
+ * rendering starts), so this client cannot renew a session whose access token
+ * expires mid-visit. `src/proxy.ts` (F3a) does that refresh ahead of every
+ * /operator request — Next 16 renamed the `middleware` convention to `proxy`.
  */
 export async function serverClient(): Promise<SupabaseClient<Database>> {
   const { url, anonKey } = supabaseCredentials();

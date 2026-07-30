@@ -67,7 +67,7 @@ B8 و B9 و B10 مستقلة — نفّذها في أي فجوة.
 
 ---
 
-## QA-1 — جولة متصفح على E3 (أنت، الآن)
+## QA-1 — جولة متصفح على E3 (أنت، الآن)  -- done
 
 E3 هبط لكن لم يُفتح متصفح واحد. هذه أول مرة تعمل فيها الخريطة على قاعدة حقيقية.
 
@@ -97,10 +97,10 @@ npm run dev
 
 ---
 
-## F1 — معالجات أكواد الأخطاء
+## F1 — معالجات أكواد الأخطاء  --done
 
 ```
-اتبع قواعد EXECUTION_MAP §0.
+اتبع قواعد EXECUTION_MAP §0. 
 
 Four ApiError.codes reach the UI from lock_seats and fall through to the generic toast, throwing
 away information the server already provides.
@@ -127,7 +127,7 @@ NOT in this task: new components, other screens, error handling outside lock_sea
 
 ---
 
-## B8 — قيود `buses`
+## B8 — قيود `buses` --done
 
 خطر عملي: `bus_type` نص غير مقيّد بينما zod يتوقع `["عادي","VIP"]`. نوع ثالث يُفشل parse **المصفوفة كلها** → `/search` يعرض شاشة خطأ لكل رحلات تلك الشركة، لا بطاقة واحدة.
 
@@ -158,7 +158,7 @@ NOT in this task: applying it, touching src/, seed.sql, or any RPC.
 
 ---
 
-## F2 — E4: التذاكر + استرجاع PNR
+## F2 — E4: التذاكر + استرجاع PNR  --done
 
 ```
 اتبع قواعد EXECUTION_MAP §0.
@@ -193,13 +193,13 @@ NOT in this task: operator/admin screens, redesign, new dependencies, touching t
 
 ---
 
-## QA-2 — QA الانتقال
+## QA-2 — QA الانتقال ---done
 
 راجع `docs/QA_PHASE_E_CUTOVER.md`. هذه الحالات لم يستطع MSW محاكاتها إطلاقاً — أول تنفيذ فعلي لها.
 
 ---
 
-## B9 — Admin RPCs
+## B9 — Admin RPCs --done
 
 ```
 اتبع قواعد EXECUTION_MAP §0. Backend task — migration FILE only, apply nothing.
@@ -227,7 +227,7 @@ NOT in this task: applying it, admin UI, src/.
 
 ---
 
-## B10 — عمود `payment_status`
+## B10 — عمود `payment_status`  --done
 
 عيب مخفي: `get_manifest` يشتق حالة الدفع من `checked_in_at` — لا يوجد عمود دفع أصلاً. المشغّل يرى "غير مدفوع" لراكب دفع ولم يصعد بعد. أصلحه **قبل** بناء شاشة المانيفست.
 

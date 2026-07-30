@@ -278,6 +278,70 @@ in `afterAll`. If a run is killed mid-way, put it back by hand — the value is 
 select id, name, commission_rate, status from public.companies order by name;
 ```
 
+## Step 8 — `20260730185812_booking_payment_status.sql` (B10)
+
+Independent of Steps 1–7 with **one ordering rule**: it `create or replace`s `get_manifest`, which
+Step 2 creates. Apply it *after* Step 2 or the replace fails with `42883`. Everything else in it —
+one `add column if not exists`, one drop-then-add CHECK, one new function — is safe to paste twice.
+
+**Expect a visible change on DEV the moment this lands.** Before it, `get_manifest` reported any
+checked-in passenger as `paid` because it inferred payment from `checked_in_at`. After it, every
+existing booking reads `unpaid` — that is the column default and it is the honest answer, since no
+payment was ever recorded. Seeded checked-in bookings flipping from `paid` to `unpaid` is the fix
+working, not a regression.
+
+1. Open `supabase/migrations/20260730185812_booking_payment_status.sql`.
+2. **Copy the ENTIRE file** — header comment through the final line,
+   `grant  execute on function public.get_manifest(uuid) to authenticated;`. A paste truncated
+   between sections 2 and 3 is the bad case: the column and the new RPC would exist while
+   `get_manifest` still derives payment from `checked_in_at`, so the manifest would silently ignore
+   the till. There is no error to notice; only step 5 catches it.
+3. Record the version:
+   ```sql
+   insert into supabase_migrations.schema_migrations (version) values ('20260730185812');
+   ```
+4. Verify — the column, its CHECK, and the new function's grants:
+   ```sql
+   select
+     (select count(*) from information_schema.columns
+       where table_schema = 'public' and table_name = 'bookings'
+         and column_name = 'payment_status'
+         and is_nullable = 'NO'
+         and column_default like '%unpaid%')                          as column_ok,
+     (select count(*) from pg_constraint
+       where conrelid = 'public.bookings'::regclass
+         and conname = 'bookings_payment_status_check'
+         and convalidated)                                            as check_valid,
+     (select count(*) from public.bookings where payment_status <> 'unpaid') as already_paid,
+     has_function_privilege('anon', 'public.set_booking_payment_status(uuid,text)', 'EXECUTE')
+                                                                      as anon_callable,
+     has_function_privilege('authenticated', 'public.set_booking_payment_status(uuid,text)', 'EXECUTE')
+                                                                      as authenticated_callable;
+   ```
+   **Expect `column_ok = 1`, `check_valid = 1`, `already_paid = 0`, `anon_callable = f`,
+   `authenticated_callable = t`.** `convalidated` matters: a constraint added `NOT VALID` would sit in
+   `pg_constraint` while enforcing nothing on existing rows.
+5. **Verify `get_manifest` was actually replaced** — this is the step that catches a truncated paste,
+   because nothing else will:
+   ```sql
+   select pg_get_functiondef('public.get_manifest(uuid)'::regprocedure) like '%b.payment_status%'
+            as reads_the_column,
+          pg_get_functiondef('public.get_manifest(uuid)'::regprocedure) like '%checked_in_at is not null then ''paid''%'
+            as still_infers;
+   ```
+   **Expect `reads_the_column = t` and `still_infers = f`.** Both `f`/`t` means section 3 of the file
+   did not land — re-paste from the `-- 3. get_manifest` header down.
+6. Most likely error: **none at paste time, then `PGRST202` for `set_booking_payment_status`** until
+   PostgREST reloads its function list — fixed by the `notify pgrst` in the post-run checks below.
+   Second most likely: **`42883 function public.get_manifest(uuid) does not exist`**, which means
+   Step 2 has not been applied; stop and check `npm run db:list`, because the pending set is then not
+   what this runbook assumes.
+
+**Regression check after this one** (per EXECUTION_MAP §B10):
+```bash
+npx vitest run -c vitest.db.config.ts tests/db/operator.test.ts
+```
+
 ---
 
 ## Post-run checks
@@ -289,10 +353,14 @@ notify pgrst, 'reload schema';
 ```
 
 ```bash
-npm run db:list     # expect all 13 versions present in Remote, 0 pending
+npm run db:list     # expect all 16 versions present in Remote, 0 pending
 npm run db:types    # regenerates src/types/database.ts (works over 6543 — Management API, not 5432)
-git diff --stat     # expect ONLY src/types/database.ts, roughly +120 lines
+git diff --stat     # expect ONLY src/types/database.ts
 ```
+
+After Step 8 the regenerated `src/types/database.ts` must contain
+`payment_status` on the `bookings` Row/Insert/Update types. If it does not, the types were generated
+against a project where Step 8 has not landed.
 
 `npm run db:types` is the step CI is currently failing on
 (*"Generated types are committed and fresh"*): the committed file was generated against 8 migrations and

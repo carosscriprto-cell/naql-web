@@ -176,15 +176,20 @@ supabase.rpc("cancel_booking", { id })           // until 2h before departure, e
 supabase.from("trips")…                                  // list/filter own trips (RLS-scoped)
 supabase.rpc("create_trip" | "update_trip")              // publish → searchable immediately
 supabase.rpc("cancel_trip", { trip_id })                 // → all bookings cancelled, returns count
-supabase.rpc("get_manifest", { trip_id })                // seat, name, phone, gender, payment status, checkedInAt
+supabase.rpc("get_manifest", { trip_id })                // seat, name, phone, gender, paymentStatus, checkedInAt
 supabase.rpc("check_in", { qr_payload })                 // HMAC verify in-DB (Vault secret); wrong company/trip → NOT_FOUND/409 + reason
 supabase.rpc("check_in_by_pnr", { pnr })                 // manual fallback
 supabase.rpc("operator_cancel_booking", { booking_id })  // no-show mitigation; own-company only (RLS), frees seats
+supabase.rpc("set_booking_payment_status", { booking_id, payment_status })  // unpaid|paid; own-company only
 supabase.from("buses")… + rpc("create_bus")              // layout immutable once bus has published trips (409)
 supabase.rpc("operator_summary", { from, to })           // bookings, revenue, commission (snapshotted), net, occupancy
 ```
 
 - Editing price/time on a published trip never touches existing bookings (they store their own `total_price` — test it).
+
+- **`paymentStatus` and `checkedInAt` are two independent facts.** `get_manifest` emits `paymentStatus` on every passenger row, read from `bookings.payment_status` (`unpaid | paid`, default `unpaid`). It is **not** derived from `checked_in_at`: payment is cash-at-office (§4) and boarding is a separate event, so a passenger can be paid-and-not-boarded (paid at the counter yesterday) or boarded-and-unpaid (waved through at the gate). Deriving one from the other made the manifest ask for a second fare on the first, and made a missing fare invisible on the second. `check_in` moves `checked_in_at` only; `set_booking_payment_status` moves `payment_status` only.
+- **Payment is per BOOKING, displayed per passenger.** The column lives on `bookings` — one PNR is one cash transaction at the counter — so every passenger row of a booking carries that booking's value. The manifest's wire shape is unchanged (`paymentStatus` stays a per-passenger field).
+- `set_booking_payment_status(booking_id, payment_status)` takes the target status rather than being a one-way "mark paid", so an operator mis-tap at a counter is correctable and a refund has somewhere to be recorded. Own-company only; another company's booking is `NOT_FOUND` (never `FORBIDDEN` — that would confirm the booking exists). Idempotent. A **cancelled** booking cannot be set to `paid` (`VALIDATION_ERROR`, `details.reason = "cancelled"`) — there is no fare to collect on a dead ticket, and revenue on it would be invisible to `operator_summary` and `commissions_by_month`, which both exclude cancelled bookings; setting it back to `unpaid` IS allowed.
 
 ## 6. Admin (role: admin)
 
@@ -216,6 +221,7 @@ trips(id, company_id, route_id, bus_id, departure_at, arrival_at, price int, sta
 seat_locks(id, trip_id, owner_id, expires_at)
 seat_lock_seats(lock_id, trip_id, seat_number, gender)        UNIQUE(trip_id, seat_number)
 bookings(id, trip_id, user_id, pnr unique, status, payment_method,
+         payment_status CHECK (unpaid|paid) default unpaid,
          total_price int, commission_rate, idempotency_key unique,
          payload_hash, response_snapshot jsonb)
 booking_passengers(id, booking_id, trip_id, seat_number, full_name, phone,
@@ -223,6 +229,15 @@ booking_passengers(id, booking_id, trip_id, seat_number, full_name, phone,
                    UNIQUE(trip_id, seat_number) WHERE active
 lookup_attempts(id, pnr, attempted_at)                        -- lookup_booking rate limiter
 ```
+
+`payment_method` and `payment_status` are different questions: *how* the fare is
+paid (`cash`, the only v1 option) versus *whether it has been collected yet*. The
+latter is a plain `text` column with a named CHECK rather than an enum like its
+neighbours `status` / `company_status` / `trip_status` — deliberately, because
+migrations are applied by hand through the SQL editor
+(`docs/MANUAL_MIGRATION_RUNBOOK.md`) and `create type` has no `if not exists`,
+so an enum makes the file unsafe to paste twice. Nothing but `bookings` needs
+the value set, so the lost reusability costs nothing.
 
 `payload_hash` (sha256 of the canonical `create_booking` arguments) is what makes
 `IDEMPOTENCY_CONFLICT` possible: the key alone cannot tell a retry from a different

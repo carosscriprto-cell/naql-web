@@ -343,6 +343,7 @@ describe("operator RPCs — role guard", () => {
     ["check_in", { p_qr_payload: "x.y" }],
     ["check_in_by_pnr", { p_pnr: PNR_A1 }],
     ["operator_cancel_booking", { p_booking_id: BOOKING_A1 }],
+    ["set_booking_payment_status", { p_booking_id: BOOKING_A1, p_payment_status: "paid" }],
     ["create_bus", { p_plate_number: "OPRSCRATCH-Z", p_bus_type: "VIP", p_layout: { rows: 1, cols: 1, aisleAfterCol: 1 } }],
     ["update_bus", { p_bus_id: BUS_A, p_bus_type: "VIP" }],
     ["operator_summary", { p_from_date: "2026-01-01", p_to_date: "2026-12-31" }],
@@ -376,6 +377,10 @@ describe("operator RPCs — role guard", () => {
     // The destructive ones in that list must not have fired.
     const { data: trip } = await svc.from("trips").select("status,price").eq("id", TRIP_A1).single();
     expect(trip).toMatchObject({ status: "published", price: 50000 });
+
+    const { data: booking } = await svc
+      .from("bookings").select("payment_status").eq("id", BOOKING_A1).single();
+    expect(booking!.payment_status, "an ungranted caller moved the till").toBe("unpaid");
   });
 
   it("as an anonymous PASSENGER every one returns FORBIDDEN", async () => {
@@ -558,9 +563,33 @@ describe("get_manifest", () => {
       gender: "male",
       phone: PHONE_A1,
       checkedInAt: null,
-      paymentStatus: "unpaid", // derived: v1 has no payments table
+      // B10: READ from bookings.payment_status, no longer derived from
+      // checked_in_at. The fixture never sets it, so this is the column default.
+      paymentStatus: "unpaid",
     });
     expect(data.passengers[1]).toMatchObject({ gender: "female" });
+  });
+
+  it("every passenger is unpaid by default — the column default, not an inference", async () => {
+    const data = okData(
+      (await call(opA, "get_manifest", { p_trip_id: TRIP_A1 })) as Envelope<{
+        passengers: Record<string, unknown>[];
+      }>,
+    );
+    expect(data.passengers.map((p) => p.paymentStatus)).toEqual([
+      "unpaid",
+      "unpaid",
+      "unpaid",
+    ]);
+
+    // And it really is the column that is being read, not a constant: the two
+    // seats of BOOKING_A1 share one booking row, so the manifest value must
+    // track that row rather than each passenger.
+    const { data: bookings } = await svc
+      .from("bookings")
+      .select("id,payment_status")
+      .in("id", [BOOKING_A1, BOOKING_A1B]);
+    expect((bookings ?? []).every((b) => b.payment_status === "unpaid")).toBe(true);
   });
 });
 
@@ -658,17 +687,31 @@ describe("check_in", () => {
     );
   });
 
-  it("the manifest now shows those seats paid and timestamped", async () => {
+  // B10 — THE REGRESSION THIS MILESTONE EXISTS FOR.
+  //
+  // This case used to assert `paymentStatus === "paid"` after a scan, because
+  // get_manifest derived payment from checked_in_at. That was the bug in test
+  // form: boarding is not payment. Checking in now moves checkedInAt and
+  // NOTHING else, and a passenger who has not paid still reads unpaid at the
+  // gate — which is the whole point of showing the field to the operator.
+  it("checking in timestamps the seats and leaves payment ALONE", async () => {
     const data = okData(
       (await call(opA, "get_manifest", { p_trip_id: TRIP_A1 })) as Envelope<{
         passengers: Record<string, unknown>[];
       }>,
     );
     const seat1 = data.passengers.find((p) => p.seatNumber === "1")!;
-    expect(seat1.paymentStatus).toBe("paid");
     expect(seat1.checkedInAt).not.toBeNull();
-    // Seat 3 is a different booking — untouched by that scan.
-    expect(data.passengers.find((p) => p.seatNumber === "3")!.paymentStatus).toBe("unpaid");
+    expect(seat1.paymentStatus, "check_in must not collect a fare").toBe("unpaid");
+
+    // Seat 3 is a different booking — untouched by that scan, on both facts.
+    const seat3 = data.passengers.find((p) => p.seatNumber === "3")!;
+    expect(seat3).toMatchObject({ checkedInAt: null, paymentStatus: "unpaid" });
+
+    // …and the column agrees with the wire.
+    const { data: booking } = await svc
+      .from("bookings").select("payment_status").eq("id", BOOKING_A1).single();
+    expect(booking!.payment_status).toBe("unpaid");
   });
 
   it("check_in_by_pnr follows the same company rules", async () => {
@@ -681,6 +724,143 @@ describe("check_in", () => {
       }>,
     );
     expect(data.passengers.map((p) => p.seatNumber)).toEqual(["3"]);
+  });
+});
+
+// ===========================================================================
+// B10 — set_booking_payment_status. Runs AFTER check_in and BEFORE
+// operator_cancel_booking on purpose: it needs BOOKING_A1 and BOOKING_A1B both
+// alive (the isolation case), and it needs the check-in above to have already
+// happened (so "paid" here cannot be confused with a side effect of boarding).
+describe("set_booking_payment_status", () => {
+  const paymentBySeat = async (): Promise<Record<string, string>> => {
+    const data = okData(
+      (await call(opA, "get_manifest", { p_trip_id: TRIP_A1 })) as Envelope<{
+        passengers: { seatNumber: string; paymentStatus: string }[];
+      }>,
+    );
+    return Object.fromEntries(
+      data.passengers.map((p): [string, string] => [p.seatNumber, p.paymentStatus]),
+    );
+  };
+
+  it("marking a booking paid moves THAT booking's seats and no others", async () => {
+    expect(await paymentBySeat()).toEqual({ "1": "unpaid", "2": "unpaid", "3": "unpaid" });
+
+    const paid = okData(
+      (await call(opA, "set_booking_payment_status", {
+        p_booking_id: BOOKING_A1,
+        p_payment_status: "paid",
+      })) as Envelope<{ id: string; pnr: string; paymentStatus: string }>,
+    );
+    expect(paid).toMatchObject({ id: BOOKING_A1, pnr: PNR_A1, paymentStatus: "paid" });
+
+    // Seats 1 and 2 are the two seats of BOOKING_A1; seat 3 is BOOKING_A1B and
+    // must not have moved. Payment is per BOOKING, and this is what that means
+    // on a per-passenger manifest.
+    expect(await paymentBySeat()).toEqual({ "1": "paid", "2": "paid", "3": "unpaid" });
+
+    const { data: other } = await svc
+      .from("bookings").select("payment_status").eq("id", BOOKING_A1B).single();
+    expect(other!.payment_status).toBe("unpaid");
+  });
+
+  it("is idempotent, and reversible back to unpaid", async () => {
+    const again = okData(
+      (await call(opA, "set_booking_payment_status", {
+        p_booking_id: BOOKING_A1,
+        p_payment_status: "paid",
+      })) as Envelope<{ paymentStatus: string }>,
+    );
+    expect(again.paymentStatus).toBe("paid");
+
+    // Reversible by design: an operator mis-tapping at a counter must be able to
+    // put it back, and a refund needs somewhere to be recorded.
+    const back = okData(
+      (await call(opA, "set_booking_payment_status", {
+        p_booking_id: BOOKING_A1,
+        p_payment_status: "unpaid",
+      })) as Envelope<{ paymentStatus: string }>,
+    );
+    expect(back.paymentStatus).toBe("unpaid");
+    expect(await paymentBySeat()).toEqual({ "1": "unpaid", "2": "unpaid", "3": "unpaid" });
+  });
+
+  it("ANOTHER COMPANY's booking is NOT_FOUND, and stays untouched", async () => {
+    // NOT_FOUND, never FORBIDDEN — FORBIDDEN would confirm the booking exists
+    // and make this an oracle for other companies' PNRs (same rule as
+    // operator_cancel_booking).
+    const env = await call(opA, "set_booking_payment_status", {
+      p_booking_id: BOOKING_B1,
+      p_payment_status: "paid",
+    });
+    expect(errorOf(env).code).toBe("NOT_FOUND");
+
+    const { data: booking } = await svc
+      .from("bookings").select("payment_status").eq("id", BOOKING_B1).single();
+    expect(booking!.payment_status).toBe("unpaid");
+  });
+
+  it("an unknown booking is the same NOT_FOUND", async () => {
+    const env = await call(opA, "set_booking_payment_status", {
+      p_booking_id: "00000000-0000-4000-8000-000000000000",
+      p_payment_status: "paid",
+    });
+    expect(errorOf(env).code).toBe("NOT_FOUND");
+  });
+
+  it("an unknown status is VALIDATION_ERROR, never a raw 23514", async () => {
+    // The CHECK on the column would surface as SQLSTATE 23514 — a transport
+    // failure with no §0 code. call() asserts the transport error is null, so
+    // that half is covered before the code assertion runs.
+    for (const status of ["refunded", "PAID", "", null]) {
+      const env = await call(opA, "set_booking_payment_status", {
+        p_booking_id: BOOKING_A1,
+        p_payment_status: status,
+      });
+      expect(errorOf(env), `status ${JSON.stringify(status)}`).toMatchObject({
+        code: "VALIDATION_ERROR",
+        details: { field: "paymentStatus" },
+      });
+    }
+
+    const { data: booking } = await svc
+      .from("bookings").select("payment_status").eq("id", BOOKING_A1).single();
+    expect(booking!.payment_status, "no rejected value may have landed").toBe("unpaid");
+  });
+
+  it("a CANCELLED booking cannot be marked paid, but can be marked unpaid", async () => {
+    // Arranged here rather than leaning on the cancel_trip case above, so this
+    // holds however the file is filtered or reordered.
+    await arrange(
+      "cancel BOOKING_A2",
+      svc.from("bookings").update({ status: "cancelled" }).eq("id", BOOKING_A2),
+    );
+
+    const env = await call(opA, "set_booking_payment_status", {
+      p_booking_id: BOOKING_A2,
+      p_payment_status: "paid",
+    });
+    expect(errorOf(env)).toMatchObject({
+      code: "VALIDATION_ERROR",
+      details: { field: "paymentStatus", reason: "cancelled" },
+    });
+
+    // There is no fare to collect on a dead ticket, and revenue on it would be
+    // invisible to operator_summary / commissions_by_month, which both exclude
+    // cancelled bookings.
+    const { data: booking } = await svc
+      .from("bookings").select("payment_status").eq("id", BOOKING_A2).single();
+    expect(booking!.payment_status).toBe("unpaid");
+
+    // The refund direction is allowed.
+    const refunded = okData(
+      (await call(opA, "set_booking_payment_status", {
+        p_booking_id: BOOKING_A2,
+        p_payment_status: "unpaid",
+      })) as Envelope<{ paymentStatus: string; status: string }>,
+    );
+    expect(refunded).toMatchObject({ paymentStatus: "unpaid", status: "cancelled" });
   });
 });
 
